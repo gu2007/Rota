@@ -5,7 +5,7 @@ const { ambiente, lerConfiguracoes } = require('../src/config');
 const { pontuar, limparTitulo } = require('../src/ia/pontuador');
 
 async function main() {
-  const repo = ambiente.demo ? require('../src/db/demo') : require('../src/db/sql');
+  const repo = require('../src/db').repo();
   await repo.iniciar(ambiente.banco);
   const config = lerConfiguracoes(await repo.config.obter());
 

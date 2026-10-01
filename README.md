@@ -2,7 +2,7 @@
 
 Bot de candidaturas para vagas de estágio e júnior em tecnologia. Ele encontra vagas, decide se valem a pena, se candidata sozinho e acompanha os processos seletivos, avisando no WhatsApp quando algo muda.
 
-Projeto pessoal em **Node.js + SQL Server**, com automação de navegador (**Playwright**) e IA (**Google Gemini**) para entender formulários que mudam de empresa para empresa.
+Projeto pessoal em **Node.js + SQL Server/PostgreSQL**, com automação de navegador (**Playwright**) e IA (**Google Gemini**) para entender formulários que mudam de empresa para empresa.
 
 ## O que ele faz
 
@@ -40,13 +40,13 @@ coleta ──► pontuação ──► fila ──► agendador ──► candid
 | `src/ia/` | Integração com o Gemini e o pontuador de vagas |
 | `src/agendador/` | Planejamento dos horários do dia e execução |
 | `src/acompanhamento/` | Leitura dos e-mails de processo seletivo e avisos |
-| `src/db/` | Repositório SQL Server e um repositório em memória (modo demo) com a mesma interface |
+| `src/db/` | Repositórios SQL Server (PC), PostgreSQL (servidor) e em memória (modo demo), todos com a mesma interface |
 | `public/` | Painel web em JavaScript puro |
 | `db/schema.sql` | Esquema do banco, idempotente, com migrações |
 
 Algumas decisões que valem destacar:
 
-- **Repository pattern**: o resto do sistema chama `repo.vagas.listar()` sem saber se é SQL Server ou memória. Isso permite rodar o painel em modo demo sem banco.
+- **Repository pattern**: o resto do sistema chama `repo.vagas.listar()` sem saber se é SQL Server, PostgreSQL ou memória. Isso permite rodar o painel em modo demo sem banco.
 - **Colunas dinâmicas por lista branca**: as queries montadas a partir do painel só aceitam nomes de campo conhecidos, o que evita SQL injection.
 - **Dados pessoais criptografados** (AES-256-GCM): CPF, RG e endereço ficam cifrados no banco, e o painel só recebe o final mascarado. A sessão do navegador também é salva cifrada.
 - **Leitura de formulários genérica**: em vez de seletores fixos por site, o bot lê rótulos, tipos e opções de cada campo, inclusive dentro de shadow DOM.
@@ -68,11 +68,11 @@ npm run db:init         # cria ou atualiza o banco
 npm start
 ```
 
-O guia completo de comandos e configuração está em [docs/uso.md](docs/uso.md). Para rodar num servidor (AWS EC2 com Docker e PM2), veja [docs/aws.md](docs/aws.md).
+O guia completo de comandos e configuração está em [docs/uso.md](docs/uso.md). Para rodar 24h num servidor gratuito (Oracle Cloud, ARM, com PostgreSQL, Docker e PM2), veja [docs/servidor.md](docs/servidor.md).
 
 ## Stack
 
-Node.js · Express · SQL Server (mssql) · Playwright · Google Gemini API · IMAP (imapflow) · whatsapp-web.js · HTML/CSS/JS puro no painel
+Node.js · Express · SQL Server (mssql) · PostgreSQL (pg) · Playwright · Google Gemini API · IMAP (imapflow) · whatsapp-web.js · HTML/CSS/JS puro no painel
 
 ## Próximos passos
 

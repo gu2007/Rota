@@ -1,5 +1,5 @@
 // Ponto de entrada: sobe o painel (Express) e liga o executor.
-// npm start usa o SQL Server do .env; npm run demo usa dados em memória.
+// npm start usa o banco do .env (SQL Server ou PostgreSQL); npm run demo usa dados em memória.
 
 const path = require('path');
 const express = require('express');
@@ -8,7 +8,7 @@ const { criarApi } = require('./rotas/api');
 const { criarExecutor } = require('./agendador/executor');
 
 async function main() {
-  const repo = ambiente.demo ? require('./db/demo') : require('./db/sql');
+  const repo = require('./db').repo();
   await repo.iniciar(ambiente.banco);
 
   const app = express();
@@ -37,6 +37,6 @@ async function main() {
 
 main().catch((erro) => {
   console.error('\nNão foi possível iniciar o Rota:', erro.message);
-  if (!ambiente.demo) console.error('Confira o .env e se o SQL Server está rodando. Para testar sem banco: npm run demo\n');
+  if (!ambiente.demo) console.error('Confira o .env e se o banco está rodando. Para testar sem banco: npm run demo\n');
   process.exit(1);
 });

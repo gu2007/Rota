@@ -11,7 +11,7 @@ const ia = require('../src/ia/gemini');
 const { normalizarUrl } = require('../src/util/url');
 
 async function main() {
-  const repo = ambiente.demo ? require('../src/db/demo') : require('../src/db/sql');
+  const repo = require('../src/db').repo();
   await repo.iniciar(ambiente.banco);
   const log = async (nivel, origem, msg) => { console.log(`  [${origem}] ${msg}`); await repo.eventos.registrar(nivel, origem, msg); };
 

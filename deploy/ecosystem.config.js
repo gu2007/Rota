@@ -11,7 +11,7 @@ module.exports = {
       NAVEGADOR_OCULTO: 'true',
       NAVEGADOR_CANAL: 'chromium',
     },
-    max_memory_restart: '1200M',
+    max_memory_restart: '1500M',
     restart_delay: 10000,
     time: true,
   }],

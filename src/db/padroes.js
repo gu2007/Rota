@@ -1,4 +1,4 @@
-// Valores iniciais, usados pelo init-db (SQL Server) e pelo modo demo.
+// Valores iniciais, usados pelo init-db e pelo modo demo.
 // Depois de mudar, rode "npm run db:init": ele só insere o que ainda não existe.
 
 const PLATAFORMAS = [

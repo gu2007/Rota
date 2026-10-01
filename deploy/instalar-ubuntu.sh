@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Prepara um Ubuntu 24.04 novo para o Rota: fuso, swap, Docker, Node 22, PM2 e o Chromium do Playwright.
+# Prepara um Ubuntu 22.04/24.04 novo (x86 ou ARM, como o Ampere da Oracle) para o Rota:
+# fuso, swap, Docker, Node 22, PM2 e o Chromium do Playwright.
 # Rode uma vez, dentro da pasta do projeto:  bash deploy/instalar-ubuntu.sh
 set -euo pipefail
 
 echo "== fuso horário (o agendador usa o horário de São Paulo)"
 sudo timedatectl set-timezone America/Sao_Paulo
 
-echo "== swap de 2 GB (folga para o SQL Server + navegadores)"
+echo "== swap de 2 GB (folga para os navegadores)"
 if ! swapon --show | grep -q /swapfile; then
   sudo fallocate -l 2G /swapfile
   sudo chmod 600 /swapfile
@@ -17,7 +18,8 @@ fi
 
 echo "== pacotes básicos e Docker"
 sudo apt-get update -y
-sudo apt-get install -y ca-certificates curl git unzip docker.io docker-compose-v2
+sudo apt-get install -y ca-certificates curl git unzip docker.io
+sudo apt-get install -y docker-compose-v2 || sudo apt-get install -y docker-compose-plugin
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER"
 
@@ -29,10 +31,12 @@ fi
 sudo npm install -g pm2
 
 echo "== dependências do projeto e Chromium do Playwright (com as bibliotecas do sistema)"
+# o WhatsApp usa o mesmo Chromium do Playwright (o puppeteer não tem Chrome para ARM)
+export PUPPETEER_SKIP_DOWNLOAD=true
 npm ci
 sudo npx playwright install-deps chromium
 npx playwright install chromium
 
-mkdir -p deploy/backup dados
+mkdir -p dados
 echo
-echo "Pronto. Saia e entre de novo no SSH (para o grupo docker valer) e siga o docs/aws.md."
+echo "Pronto. Saia e entre de novo no SSH (para o grupo docker valer) e siga o docs/servidor.md."

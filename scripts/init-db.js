@@ -16,13 +16,8 @@ const conexao = (database) => ({
 
 async function main() {
   if (!b.server) throw new Error('DB_SERVER não definido no .env');
-
-  // chave do cofre: gerada uma única vez
-  if (!process.env.ROTA_CHAVE) {
-    const arquivoEnv = path.join(__dirname, '..', '.env');
-    fs.appendFileSync(arquivoEnv, `\n# Chave do cofre de dados pessoais. NÃO compartilhe e NÃO apague (sem ela os dados não abrem).\nROTA_CHAVE=${gerarChave()}\n`);
-    console.log('✓ chave do cofre criada no .env (ROTA_CHAVE)');
-  }
+  garantirChave();
+  if (b.tipo === 'postgres') return iniciarPostgres();
 
   // CREATE DATABASE precisa rodar conectado no master
   const master = await new sql.ConnectionPool(conexao('master')).connect();
@@ -73,6 +68,52 @@ async function main() {
   console.log('✓ valores iniciais (plataformas, respostas fixas, configurações)');
 
   await pool.close();
+  console.log('\nPronto. Agora rode: npm start\n');
+}
+
+// chave do cofre: gerada uma única vez
+function garantirChave() {
+  if (process.env.ROTA_CHAVE) return;
+  const arquivoEnv = path.join(__dirname, '..', '.env');
+  fs.appendFileSync(arquivoEnv, `\n# Chave do cofre de dados pessoais. NÃO compartilhe e NÃO apague (sem ela os dados não abrem).\nROTA_CHAVE=${gerarChave()}\n`);
+  console.log('✓ chave do cofre criada no .env (ROTA_CHAVE)');
+}
+
+// PostgreSQL (servidor): mesmo resultado, com ON CONFLICT no lugar dos IF NOT EXISTS
+async function iniciarPostgres() {
+  const { Client } = require('pg');
+  const cfg = { host: b.server, port: b.port, user: b.user, password: b.password };
+
+  const admin = new Client({ ...cfg, database: 'postgres' });
+  await admin.connect();
+  const existe = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [b.database]);
+  if (!existe.rowCount) await admin.query(`CREATE DATABASE "${b.database.replace(/"/g, '')}"`);
+  await admin.end();
+  console.log(`✓ banco ${b.database} (PostgreSQL)`);
+
+  const db = new Client({ ...cfg, database: b.database });
+  await db.connect();
+  await db.query(fs.readFileSync(path.join(__dirname, '..', 'db', 'schema-postgres.sql'), 'utf8'));
+  console.log('✓ tabelas');
+
+  await db.query('INSERT INTO perfil (id) VALUES (1) ON CONFLICT (id) DO NOTHING');
+  for (const p of PLATAFORMAS) {
+    await db.query(
+      `INSERT INTO plataformas (codigo, nome, tipo, limite_diario, ordem) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (codigo) DO NOTHING`,
+      [p.codigo, p.nome, p.tipo, p.limite_diario, p.ordem],
+    );
+  }
+  for (const r of RESPOSTAS_FIXAS) {
+    await db.query(
+      `INSERT INTO respostas_fixas (chave, rotulo, ajuda, ordem, resposta) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (chave) DO NOTHING`,
+      [r.chave, r.rotulo, r.ajuda, r.ordem, r.resposta || null],
+    );
+  }
+  for (const [chave, valor] of Object.entries(CONFIGURACOES)) {
+    await db.query('INSERT INTO configuracoes (chave, valor) VALUES ($1, $2) ON CONFLICT (chave) DO NOTHING', [chave, valor]);
+  }
+  console.log('✓ valores iniciais (plataformas, respostas fixas, configurações)');
+  await db.end();
   console.log('\nPronto. Agora rode: npm start\n');
 }
 

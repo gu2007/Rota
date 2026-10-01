@@ -1,21 +1,19 @@
-# SQL Server 2022 Express em container, só acessível de dentro do servidor (127.0.0.1).
+# PostgreSQL 16 em container, só acessível de dentro do servidor (127.0.0.1).
 # Subir:  docker compose -f deploy/docker-compose.yml --env-file .env up -d
 services:
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: rota-sqlserver
+  postgres:
+    image: postgres:16-alpine
+    container_name: rota-postgres
     environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_PID: Express
-      MSSQL_SA_PASSWORD: ${DB_PASSWORD}
-      MSSQL_MEMORY_LIMIT_MB: "1536"   # sobra memória para os navegadores
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
       TZ: America/Sao_Paulo
     ports:
-      - "127.0.0.1:1433:1433"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - mssql:/var/opt/mssql
-      - ./backup:/var/opt/mssql/backup
+      - pgdados:/var/lib/postgresql/data
     restart: unless-stopped
 
 volumes:
-  mssql:
+  pgdados:

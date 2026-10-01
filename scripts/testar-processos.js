@@ -5,7 +5,7 @@ const acompanhamento = require('../src/acompanhamento/processos');
 const whatsapp = require('../src/notificacao/whatsapp');
 
 async function main() {
-  const repo = ambiente.demo ? require('../src/db/demo') : require('../src/db/sql');
+  const repo = require('../src/db').repo();
   await repo.iniciar(ambiente.banco);
   const log = async (nivel, origem, msg) => { console.log(`  [${origem}] ${msg}`); await repo.eventos.registrar(nivel, origem, msg); };
   console.log('\n=== Rota · acompanhamento dos processos seletivos ===\n');

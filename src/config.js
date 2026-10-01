@@ -1,4 +1,4 @@
-// Lê o .env e decide se roda com SQL Server ou em modo demo.
+// Lê o .env e decide o banco: SQL Server (PC), PostgreSQL (servidor) ou modo demo.
 require('dotenv').config();
 
 const demo = process.argv.includes('--demo') || !process.env.DB_SERVER;
@@ -10,8 +10,9 @@ const ambiente = {
   porta: Number(process.env.PORT) || 3000,
   demo,
   banco: {
+    tipo: process.env.DB_TIPO === 'postgres' ? 'postgres' : 'sqlserver',
     server: process.env.DB_SERVER,
-    port: Number(process.env.DB_PORT) || 1433,
+    port: Number(process.env.DB_PORT) || (process.env.DB_TIPO === 'postgres' ? 5432 : 1433),
     database: process.env.DB_DATABASE || 'Rota',
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,

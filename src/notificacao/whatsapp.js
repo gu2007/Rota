@@ -1,6 +1,7 @@
 // Envia mensagens para o próprio número (conversa "Você") via whatsapp-web.js.
 // Primeira conexão: npm run whatsapp:conectar. A sessão fica em dados/whatsapp.
 
+const fs = require('fs');
 const path = require('path');
 
 const PASTA = path.join(__dirname, '..', '..', 'dados', 'whatsapp');
@@ -10,12 +11,22 @@ let pronto = null; // conexão em andamento
 const numero = () => String(process.env.WHATSAPP_NUMERO || '').replace(/\D/g, '');
 const configurado = () => numero().length >= 12;
 
+// No Linux ARM (Oracle) o puppeteer não tem Chrome próprio: usa o Chromium do Playwright.
+function navegador() {
+  if (process.env.WHATSAPP_NAVEGADOR) return process.env.WHATSAPP_NAVEGADOR;
+  if (process.platform !== 'linux') return undefined;
+  try {
+    const caminho = require('playwright').chromium.executablePath();
+    return fs.existsSync(caminho) ? caminho : undefined;
+  } catch { return undefined; }
+}
+
 function conectar({ mostrarQr = false, limiteMs = 90000, progresso = null } = {}) {
   if (pronto) return pronto;
   const { Client, LocalAuth } = require('whatsapp-web.js');
   cliente = new Client({
     authStrategy: new LocalAuth({ dataPath: PASTA }),
-    puppeteer: { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] },
+    puppeteer: { headless: true, executablePath: navegador(), args: ['--no-sandbox', '--disable-setuid-sandbox'] },
   });
   pronto = new Promise((resolve, reject) => {
     const tempo = setTimeout(() => reject(new Error('O WhatsApp demorou demais para conectar. Feche o WhatsApp "escondido" que ficou aberto (veja o README) e tente de novo.')), limiteMs);

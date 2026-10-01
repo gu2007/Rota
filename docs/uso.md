@@ -99,6 +99,7 @@ Tudo acontece **dentro da janela de atividade** (8h às 22h por padrão) e **at�
 | `scripts/repontuar.js` | Recalcula a nota das vagas ainda não tentadas | quando mudar os Ajustes |
 | `src/navegador/navegador.js` | Abre o seu Chrome com sessão salva e digita como gente | ritmo humano |
 | `src/db/sql.js` | Todas as queries do SQL Server | queries parametrizadas, transação, MERGE |
+| `src/db/postgres.js` | As mesmas queries em PostgreSQL (servidor) | `ON CONFLICT`, `RETURNING`, transação |
 | `src/db/demo.js` | As mesmas funções, em memória | o padrão "Repository" |
 | `src/db/modelo.js` | Quais campos cada tabela aceita | como evitar SQL injection em colunas dinâmicas |
 | `src/db/padroes.js` | Plataformas, respostas fixas e configurações iniciais | onde mudar valores padrão |
@@ -108,7 +109,7 @@ Tudo acontece **dentro da janela de atividade** (8h às 22h por padrão) e **at�
 
 ### O conceito que amarra tudo: Repository
 
-Nada fora de `src/db/` sabe que existe SQL. O executor chama `repo.vagas.proximaDaFila()`, e tanto faz se isso vem do SQL Server (`sql.js`) ou da memória (`demo.js`). É por isso que o modo demo funciona sem banco, e que dá para testar o executor sem tocar no banco.
+Nada fora de `src/db/` sabe que existe SQL. O executor chama `repo.vagas.proximaDaFila()`, e tanto faz se isso vem do SQL Server (`sql.js`), do PostgreSQL (`postgres.js`) ou da memória (`demo.js`); quem escolhe é `src/db/index.js`, pelo `DB_TIPO` do `.env`. É por isso que o modo demo funciona sem banco, e que dá para testar o executor sem tocar no banco.
 
 ---
 
