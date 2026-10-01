@@ -28,7 +28,9 @@
     "sessao:exportar": "node scripts/sessao.js exportar",
     "sessao:importar": "node scripts/sessao.js importar",
     "dados:exportar": "node scripts/dados.js exportar",
-    "dados:importar": "node scripts/dados.js importar"
+    "dados:importar": "node scripts/dados.js importar",
+    "salvar": "node scripts/salvar.js",
+    "marcar": "node scripts/marcar.js"
   },
   "engines": {
     "node": ">=18"

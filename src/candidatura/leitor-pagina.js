@@ -115,11 +115,22 @@ function lerCampos() {
     });
   });
 
+  // Caixinha customizada: o input real fica escondido e o que aparece é o label ou um quadrado ao lado
+  function caixaVisivel(c) {
+    if (visivel(c)) return true;
+    const raiz = c.getRootNode && c.getRootNode().querySelector ? c.getRootNode() : document;
+    const pelaId = c.id ? raiz.querySelector(`label[for="${CSS.escape(c.id)}"]`) : null;
+    return [c.closest('label'), pelaId, c.parentElement].some((e) => e && visivel(e));
+  }
+  // Aceite de termos e afins é uma caixinha sozinha, mesmo ao lado de outra
+  const ACEITE = /aceito|concordo|\bli e\b|reconhe[cç]o|consentimento|termo|privacidade|autorizo|ciente|declaro|talento|oportunidades|i agree|i accept|terms|privacy|consent/i;
+
   // Várias caixinhas juntas, sem outros campos no meio, são uma pergunta de escolha.
   // A caixinha real às vezes fica invisível, por isso olha também o label.
   const caixinhas = [...todos('input[type=checkbox], [role=checkbox]')]
-    .filter((c) => !usados.has(c) && !c.disabled && (visivel(c) || visivel(c.closest('label') || c)));
+    .filter((c) => !usados.has(c) && !c.disabled && caixaVisivel(c));
   const grupoDe = (c) => {
+    if (ACEITE.test(rotulo(c))) return null;
     if (c.name && caixinhas.filter((o) => o.name === c.name).length > 1) return caixinhas.filter((o) => o.name === c.name);
     // Menor contêiner com 2+ caixinhas e nenhum outro tipo de campo
     for (let p = c.parentElement, i = 0; p && i < 6; p = p.parentElement, i++) {
@@ -162,7 +173,7 @@ function lerCampos() {
     if (usados.has(el) || el.disabled || el.readOnly) return;
     const tipoInput = (el.getAttribute('type') || '').toLowerCase();
     // Input de arquivo costuma ficar escondido atrás de um botão
-    if (tipoInput !== 'file' && !visivel(el)) return;
+    if (tipoInput === 'checkbox' ? !caixaVisivel(el) : (tipoInput !== 'file' && !visivel(el))) return;
     if (el.closest('[data-rota-ignorar], header, nav, footer')) return;
     if (el.getAttribute('role') === 'combobox' && el.tagName === 'INPUT' && el.getAttribute('aria-autocomplete') === 'none') return;
 

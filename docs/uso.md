@@ -42,6 +42,8 @@ npm run gupy:aprender -- https://empresa.gupy.io/job/...   # você se candidata,
 npm run testar:ia     # testa só a chave/modelo do Gemini
 npm run repontuar     # recalcula as notas depois de mudar os Ajustes
 npm run tentar:de-novo # devolve para a fila as vagas puladas/com erro (depois de uma atualização do bot)
+npm run salvar         # git add + commit + push de uma vez (ou: npm run salvar "mensagem")
+npm run marcar 207 candidatada   # muda o estado de uma vaga na mão (ex.: você mesmo enviou)
 ```
 Ele anota os botões que você usou para avançar e finalizar, os avisos que você fechou e as suas respostas às perguntas objetivas, e usa isso nas próximas vagas. Dados pessoais (CPF, telefone, endereço, senha) não são gravados. Atenção: é uma candidatura de verdade.
 

@@ -160,9 +160,18 @@ async function preencher(pagina, campo, valor) {
       await opcao.check({ force: true }).catch(() => opcao.click({ force: true }));
       break;
     }
-    case 'checkbox':
-      await el.check({ force: true }).catch(() => el.click({ force: true }));
+    case 'checkbox': {
+      await el.check({ force: true }).catch(() => el.click({ force: true }).catch(() => {}));
+      // caixinha customizada: o input escondido não muda com o check, então clica pelo próprio elemento
+      if (!(await el.isChecked().catch(() => false))) await el.evaluate((e) => e.click()).catch(() => {});
+      // último recurso: o canto esquerdo do label (no meio dele costuma ter um link para os termos)
+      if (!(await el.isChecked().catch(() => false))) {
+        const id = await el.getAttribute('id').catch(() => null);
+        const label = id ? pagina.locator(`label[for="${id}"]`).first() : el.locator('xpath=ancestor::label[1]');
+        if (await label.count().catch(() => 0)) await label.click({ position: { x: 3, y: 6 }, timeout: 4000 }).catch(() => {});
+      }
       break;
+    }
     case 'arquivo':
       await el.setInputFiles(valor);
       break;

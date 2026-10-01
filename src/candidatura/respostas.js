@@ -72,7 +72,7 @@ const ORIGEM_VAGA = {
   google: { texto: 'Pesquisa no Google', opcoes: ['Google', 'Internet', 'Site', 'Outros'] },
 };
 
-const CONSENTIMENTO = /concordo|li e aceito|aceito (os|as|o|a) (termos|politica|aviso)|eu aceito|aceito$|termos (e|de) (condicoes|uso)|politica de privacidade|aviso de privacidade|autorizo|lgpd|declaro que|i agree|i accept|terms (and|&) conditions|privacy (policy|notice)|grupo de talentos|banco de talentos|talent (pool|community|network)|entrar em contato comigo|oportunidades (de emprego )?futuras|futuras oportunidades|future (job )?opportunities/;
+const CONSENTIMENTO = /concordo|li e aceito|li e reconheco|reconheco (o|a|os|as) termo|termo de consentimento|consentimento|estou ciente|aceito (os|as|o|a) (termos|politica|aviso)|eu aceito|aceito$|termos (e|de) (condicoes|uso)|politica de privacidade|aviso de privacidade|autorizo|lgpd|declaro que|i agree|i accept|terms (and|&) conditions|privacy (policy|notice)|grupo de talentos|banco de talentos|talent (pool|community|network)|entrar em contato comigo|oportunidades (de emprego )?futuras|futuras oportunidades|future (job )?opportunities/;
 // Palavras inteiras, senão "remuneração" casa com "raça"
 const DIVERSIDADE = /(^|[^a-z])(genero|sexo|gender|raca|cor|etnia|pcd)([^a-z]|$)|orientacao sexual|identidade de genero|deficiencia|neurodivergen/;
 const PREFIRO_NAO = /prefiro nao|nao desejo|nao quero (informar|responder)|prefiro nao informar|prefer not|decline to|nao informar/;

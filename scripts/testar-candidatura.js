@@ -39,9 +39,15 @@ async function main() {
     vaga = await repo.vagas.obter(r.id);
     if (plataforma === 'sites') await repo.vagas.atualizar(vaga.id, { plataforma_envio: 'sites' });
   } else if (plataforma === 'sites') {
-    vaga = await repo.vagas.proximaDaFila('sites', config.notaMinima, { incluirTestadas: enviar });
+    // no teste a mesma vaga pode ser simulada de novo: é assim que se confere uma correção
+    vaga = await repo.vagas.proximaDaFila('sites', config.notaMinima, { incluirTestadas: true });
     if (!vaga) {
       console.log('   Nenhuma vaga de site de empresa na fila. Rode "npm run testar:linkedin" para descobrir mais.\n');
+      const sites = (await repo.vagas.listar({ limite: 5000 })).filter((v) => v.plataforma_envio === 'sites');
+      const porStatus = sites.reduce((a, v) => ({ ...a, [v.status]: (a[v.status] || 0) + 1 }), {});
+      console.log(`   Vagas de sites no banco: ${JSON.stringify(porStatus)} · nota mínima: ${config.notaMinima}`);
+      for (const v of sites.slice(0, 8)) console.log(`     #${v.id} [${v.nota ?? '—'}] ${v.status} · ${v.titulo} — ${v.empresa || ''} · ${String(v.motivo_status || '').slice(0, 80)}`);
+      console.log();
       return repo.encerrar();
     }
   } else {
