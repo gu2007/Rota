@@ -1,0 +1,43 @@
+{
+  "name": "rota",
+  "version": "0.13.0",
+  "description": "Bot de candidaturas para vagas de estágio/júnior em tecnologia: encontra vagas, se candidata e acompanha os processos seletivos.",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "demo": "node src/server.js --demo",
+    "db:init": "node scripts/init-db.js",
+    "simular": "node scripts/simular-agenda.js",
+    "gupy:login": "node scripts/gupy-login.js",
+    "testar:gupy": "node scripts/testar-candidatura.js",
+    "repontuar": "node scripts/repontuar.js",
+    "gupy:aprender": "node scripts/gupy-aprender.js",
+    "testar:ia": "node scripts/testar-ia.js",
+    "reaprender": "node scripts/reaprender.js",
+    "tentar:de-novo": "node scripts/tentar-de-novo.js",
+    "enviar:gupy": "node scripts/testar-candidatura.js --enviar",
+    "testar:email": "node scripts/testar-email.js",
+    "testar:linkedin": "node scripts/testar-linkedin.js",
+    "testar:sites": "node scripts/testar-candidatura.js --sites",
+    "enviar:sites": "node scripts/testar-candidatura.js --sites --enviar",
+    "whatsapp:conectar": "node scripts/whatsapp-conectar.js",
+    "testar:processos": "node scripts/testar-processos.js",
+    "processos:refazer": "node scripts/processos-refazer.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "imapflow": "^2.1.2",
+    "mailparser": "^3.9.31",
+    "mssql": "^11.0.1",
+    "playwright": "^1.63.0",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.34.7"
+  },
+  "author": "Gustavo Lima Noronha (https://github.com/gu2007)"
+}

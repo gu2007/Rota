@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rota</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23141619'/%3E%3Cpath d='M7 24c6 0 4-16 10-16s4 16 8 16' stroke='%23F2B33D' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="lateral">
+      <a class="marca" href="#/hoje" aria-label="Rota — início">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 24c6 0 4-16 10-16s4 16 8 16"/></svg>
+        <span>Rota</span>
+      </a>
+      <nav class="menu">
+        <a href="#/hoje" data-rota="hoje"><i class="ico ico-hoje"></i><span>Hoje</span></a>
+        <a href="#/vagas" data-rota="vagas"><i class="ico ico-vagas"></i><span>Vagas</span></a>
+        <a href="#/historico" data-rota="historico"><i class="ico ico-historico"></i><span>Histórico</span></a>
+        <a href="#/perfil" data-rota="perfil"><i class="ico ico-perfil"></i><span>Perfil</span></a>
+        <a href="#/processos" data-rota="processos"><i class="ico ico-processos"></i><span>Processos</span></a>
+        <a href="#/perguntas" data-rota="perguntas"><i class="ico ico-perguntas"></i><span>Perguntas</span><b class="contador" id="contador-perguntas" hidden></b></a>
+        <a href="#/respostas" data-rota="respostas"><i class="ico ico-respostas"></i><span>Respostas</span></a>
+        <a href="#/ajustes" data-rota="ajustes"><i class="ico ico-ajustes"></i><span>Ajustes</span></a>
+      </nav>
+      <div class="rodape-lateral" id="rodape-lateral"></div>
+    </aside>
+
+    <main class="conteudo" id="conteudo" tabindex="-1">
+      <p class="carregando">Carregando…</p>
+    </main>
+  </div>
+
+  <div class="avisos" id="avisos" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

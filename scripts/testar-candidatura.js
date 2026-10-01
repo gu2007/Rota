@@ -1,0 +1,92 @@
+// Busca vagas e faz uma candidatura agora, sem esperar a agenda. Só envia de verdade com --enviar.
+// npm run testar:gupy [-- <link>] | enviar:gupy [-- <link>] | testar:sites | enviar:sites
+// Resultado no Histórico do painel; prints em dados/gupy/.
+
+const { ambiente, lerConfiguracoes } = require('../src/config');
+const { registrarVaga, guardarPendentes } = require('../src/agendador/executor');
+const { LISTAS } = require('../src/db/modelo');
+const portal = require('../src/plataformas/portal-gupy');
+const modulos = require('../src/plataformas');
+const ia = require('../src/ia/gemini');
+const { normalizarUrl } = require('../src/util/url');
+
+async function main() {
+  const repo = ambiente.demo ? require('../src/db/demo') : require('../src/db/sql');
+  await repo.iniciar(ambiente.banco);
+  const log = async (nivel, origem, msg) => { console.log(`  [${origem}] ${msg}`); await repo.eventos.registrar(nivel, origem, msg); };
+
+  const args = process.argv.slice(2);
+  // O PowerShell engole o "--" de "npm run x -- --enviar" e o npm repassa como npm_config_enviar
+  const enviar = args.includes('--enviar') || process.env.npm_config_enviar === 'true';
+  const plataforma = args.includes('--sites') ? 'sites' : 'gupy';
+  const nomePlat = plataforma === 'sites' ? 'sites de empresas' : 'Gupy';
+  const config = { ...lerConfiguracoes(await repo.config.obter()), modoTeste: !enviar };
+  const listas = {};
+  for (const nome of Object.keys(LISTAS)) listas[nome] = await repo.listas.listar(nome);
+  const ctx = { config, perfil: await repo.perfil.obter(), listas, pessoais: await repo.pessoais.obterTodos(), respostasFixas: await repo.respostas.listar(), respondidas: await repo.perguntas.respondidas(), log };
+
+  console.log(enviar
+    ? '\n=== Rota · candidatura DE VERDADE (vai clicar em Finalizar) ===\n'
+    : '\n=== Rota · teste principal (modo teste: NADA é enviado) ===\n');
+  if (!ia.disponivel()) console.log('  Aviso: sem GEMINI_API_KEY no .env. Perguntas abertas vão fazer a vaga ser pulada.\n');
+  if (!ctx.perfil.curriculo_arquivo) console.log('  Aviso: caminho do currículo vazio no Perfil.\n');
+
+  let vaga;
+  const link = args.find((a) => !a.startsWith('--'));
+  if (link) {
+    const url = normalizarUrl(link);
+    const r = await registrarVaga(repo, { url, titulo: 'Vaga informada no teste' }, { origem_plataforma: 'manual', origem_coleta: 'manual' });
+    vaga = await repo.vagas.obter(r.id);
+    if (plataforma === 'sites') await repo.vagas.atualizar(vaga.id, { plataforma_envio: 'sites' });
+  } else if (plataforma === 'sites') {
+    vaga = await repo.vagas.proximaDaFila('sites', config.notaMinima, { incluirTestadas: enviar });
+    if (!vaga) {
+      console.log('   Nenhuma vaga de site de empresa na fila. Rode "npm run testar:linkedin" para descobrir mais.\n');
+      return repo.encerrar();
+    }
+  } else {
+    console.log('1) Buscando vagas no portal da Gupy…');
+    const encontradas = await portal.coletar(ctx);
+    let novas = 0, fila = 0;
+    for (const v of encontradas) {
+      const r = await registrarVaga(repo, v, { origem_plataforma: 'gupy_portal', origem_coleta: 'busca' });
+      if (r.nova) novas++;
+      if (r.nova && r.aprovada) fila++;
+    }
+    console.log(`   ${encontradas.length} encontradas · ${novas} novas · ${fila} entraram na fila (nota ≥ ${config.notaMinima})\n`);
+    vaga = await repo.vagas.proximaDaFila('gupy', config.notaMinima, { incluirTestadas: enviar });
+    if (!vaga) {
+      console.log('   Nenhuma vaga da Gupy na fila. Veja as notas em Vagas no painel ou ajuste os termos de busca.\n');
+      return repo.encerrar();
+    }
+  }
+
+  console.log(`2) Candidatando em ${nomePlat} (${enviar ? 'DE VERDADE' : 'teste'}): ${vaga.titulo} — ${vaga.empresa || ''} [nota ${vaga.nota ?? '—'}]`);
+  if (enviar) {
+    const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+    const resposta = await new Promise((ok) => rl.question(`   ${vaga.url}\n   Confirma o envio REAL desta candidatura? Digite "sim": `, ok));
+    rl.close();
+    if (resposta.trim().toLowerCase() !== 'sim') {
+      console.log('   Cancelado. Nada foi feito.\n');
+      return repo.encerrar();
+    }
+  }
+  console.log(`   ${vaga.url}\n   O Chrome vai abrir. Não mexa nele até terminar.\n`);
+
+  const r = await modulos[plataforma].candidatar(vaga, ctx);
+  await repo.candidaturas.registrar({ vaga_id: vaga.id, plataforma, resultado: r.resultado, modo_teste: !enviar, motivo: r.motivo, respostas: r.respostas });
+  const aguardando = await guardarPendentes(repo, vaga, r);
+  const status = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', enviada: 'candidatada' }[r.resultado];
+  await repo.vagas.atualizar(vaga.id, { status, motivo_status: aguardando || r.motivo || null });
+
+  console.log(`3) Resultado: ${r.resultado.toUpperCase()}${r.motivo ? ` — ${r.motivo}` : ''}\n`);
+  if (aguardando) console.log(`   → ${r.pendentes.length} pergunta(s) foram para a caixa "Perguntas" do painel. Responda lá e a vaga volta para a fila sozinha.\n`);
+  for (const x of r.respostas) console.log(`   • ${x.pergunta}\n     → ${String(x.resposta).slice(0, 160)}  [${x.fonte}]`);
+  console.log(`\n   Prints de cada etapa: ${r.pasta}\n`);
+  await repo.encerrar();
+}
+
+main().catch((e) => {
+  console.error('\nErro no teste:', e.message, '\n');
+  process.exit(1);
+});

@@ -1,0 +1,36 @@
+# Dependências
+node_modules/
+
+# Segredos e configuração local (senhas, chaves de API, chave do cofre)
+.env
+.env.*
+!.env.example
+
+# Dados do Rota: sessão do navegador, cofre criptografado, sessão do WhatsApp,
+# prints das candidaturas, aprendizado e e-mails lidos
+dados/
+
+# Cache e sessão do whatsapp-web.js
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Arquivos pessoais que podem estar na pasta do projeto
+*.zip
+*.pdf
+*.doc
+*.docx
+*.jpg
+*.jpeg
+*.png
+*.heic
+# imagens do README podem ir em docs/
+!docs/**/*.png
+!docs/**/*.jpg
+
+# Sistema e editores
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
