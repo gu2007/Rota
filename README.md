@@ -68,7 +68,7 @@ npm run db:init         # cria ou atualiza o banco
 npm start
 ```
 
-O guia completo de comandos e configuração está em [docs/uso.md](docs/uso.md).
+O guia completo de comandos e configuração está em [docs/uso.md](docs/uso.md). Para rodar num servidor (AWS EC2 com Docker e PM2), veja [docs/aws.md](docs/aws.md).
 
 ## Stack
 
@@ -76,5 +76,4 @@ Node.js · Express · SQL Server (mssql) · Playwright · Google Gemini API · I
 
 ## Próximos passos
 
-- Rodar na nuvem (AWS), para funcionar com o computador desligado.
 - Melhorar a candidatura em sites de empresas com formulários mais complexos.

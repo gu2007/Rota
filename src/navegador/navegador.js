@@ -46,8 +46,11 @@ async function abrirNavegador({ headless = process.env.NAVEGADOR_OCULTO === 'tru
     args: ['--start-maximized', '--disable-blink-features=AutomationControlled'],
   };
   // Permite outro navegador (usado nos testes)
+  // No servidor Linux usa o Chromium do Playwright (NAVEGADOR_CANAL=chromium); no PC, o Chrome instalado
+  const canal = process.env.NAVEGADOR_CANAL || (process.platform === 'linux' ? 'chromium' : 'chrome');
   if (process.env.NAVEGADOR_EXECUTAVEL) opcoes.executablePath = process.env.NAVEGADOR_EXECUTAVEL;
-  else opcoes.channel = process.env.NAVEGADOR_CANAL || 'chrome';
+  else opcoes.channel = canal; // 'chromium' = modo oculto com o navegador completo (mais parecido com o real)
+  if (headless) opcoes.args.push('--no-sandbox');
 
   const contexto = await chromium.launchPersistentContext(PASTA_PERFIL, opcoes);
 

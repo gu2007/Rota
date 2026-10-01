@@ -34,3 +34,7 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# backups do banco (têm dados pessoais)
+*.bak
+deploy/backup/

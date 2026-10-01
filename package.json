@@ -1,6 +1,6 @@
 {
   "name": "rota",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Bot de candidaturas para vagas de estágio/júnior em tecnologia: encontra vagas, se candidata e acompanha os processos seletivos.",
   "private": true,
   "main": "src/server.js",
@@ -24,7 +24,9 @@
     "enviar:sites": "node scripts/testar-candidatura.js --sites --enviar",
     "whatsapp:conectar": "node scripts/whatsapp-conectar.js",
     "testar:processos": "node scripts/testar-processos.js",
-    "processos:refazer": "node scripts/processos-refazer.js"
+    "processos:refazer": "node scripts/processos-refazer.js",
+    "sessao:exportar": "node scripts/sessao.js exportar",
+    "sessao:importar": "node scripts/sessao.js importar"
   },
   "engines": {
     "node": ">=18"

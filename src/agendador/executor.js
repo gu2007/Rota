@@ -10,6 +10,7 @@ const { ModuloPendente } = require('../plataformas/base');
 const modulosPadrao = require('../plataformas');
 const { LISTAS } = require('../db/modelo');
 const acompanhamento = require('../acompanhamento/processos');
+const whatsapp = require('../notificacao/whatsapp');
 
 const TOLERANCIA_ATRASO = 20; // min; com o PC desligado, a ação vira "perdida" em vez de rodar horas depois
 
@@ -114,6 +115,8 @@ function criarExecutor(repo, { intervaloMs = 30 * 1000, modulos = modulosPadrao 
         await acompanhamento.notificar({ repo, log });
       } catch (e) {
         await log('erro', 'processos', e.message);
+      } finally {
+        await whatsapp.desconectar(); // o WhatsApp abre um Chrome: fecha para não ocupar memória o dia todo
       }
     }
     await log('info', plataforma.codigo, `Coleta: ${encontradas.length} encontradas, ${novas} novas, ${naFila} foram para a fila.`);
@@ -193,6 +196,7 @@ function criarExecutor(repo, { intervaloMs = 30 * 1000, modulos = modulosPadrao 
         const config = lerConfiguracoes(await repo.config.obter());
         if (agora >= horarioLocal(hoje, config.janelaInicio) && agora <= horarioLocal(hoje, config.janelaFim)) {
           await acompanhamento.lembrar({ repo, log }).catch((e) => log('erro', 'processos', e.message));
+          await whatsapp.desconectar();
         }
       }
     } catch (erro) {
