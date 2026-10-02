@@ -24,14 +24,14 @@ const REGRAS_PESSOAIS = [
   [/(^|[^a-z])cpf([^a-z]|$)/, 'cpf'],
   [/(^|[^a-z])rg([^a-z]|$)|registro geral|carteira de identidade|documento de identidade/, 'rg'],
   [/nascimento/, 'data_nascimento'],
-  [/(^|[^a-z])cep([^a-z]|$)/, 'cep'],
+  [/(^|[^a-z])cep([^a-z]|$)|codigo postal|postal code|zip ?code|^zip$/, 'cep'],
   [/complemento/, 'complemento'],
   [/bairro/, 'bairro'],
   [/^(numero|n[o°º]\.?)$|^numero (da residencia|do endereco|residencial)/, 'numero'],
-  [/logradouro|^endereco|^rua\b|endereco residencial/, 'logradouro'],
+  [/logradouro|^endereco|^rua\b|endereco residencial|address line ?1|^street|^address$/, 'logradouro'],
   [/nacionalidade/, 'nacionalidade'],
   [/estado civil/, 'estado_civil'],
-  [/^(estado|uf)$|estado onde mora|estado de residencia/, 'estado'],
+  [/^(estado|uf)$|estado onde mora|estado de residencia|^state$|state\/province|estado\/provincia|^provincia$/, 'estado'],
 ];
 
 function detectarPessoal(pergunta) {
@@ -173,10 +173,16 @@ async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga
   const contexto = { perfil, listas, respostasFixas, textosTreino, respondidas: [...respondidas, ...objetivasTreino] };
 
   // Código do país do telefone (lista separada do número)
-  if (['select', 'combobox'].includes(campo.tipo) && /country code|codigo do pais|codigo de pais|prefixo|\bddi\b|dial code|phone code/.test(rotulo)) {
+  if (['select', 'combobox'].includes(campo.tipo) && (campo.codigoPais || /country code|codigo do pais|codigo de pais|prefixo|\bddi\b|dial code|phone code/.test(rotulo))) {
     const opcao = (campo.opcoes || []).find((o) => /\+\s?55\b/.test(o)) || (campo.opcoes || []).find((o) => /brasil|brazil/i.test(o));
     return opcao ? { valor: opcao, fonte: 'regra' } : null;
   }
+
+  // Campo-armadilha para robôs ("honeypot"): fica sempre vazio
+  if (/honeypot|pote de mel|leave (this )?(field )?(blank|empty)|deixe (este campo )?(em branco|vazio)|nao preencha este campo/.test(rotulo)) return null;
+
+  // Código do país digitável: nunca recebe o número do telefone
+  if (campo.codigoPais && !ehEscolha(campo)) return { valor: 'Brasil', fonte: 'regra' };
 
   // Pelo tipo do input: type="tel" é telefone mesmo com rótulo como "BR+55"
   if (campo.tipo === 'texto' && campo.html === 'tel' && !/cep|cpf/.test(rotulo)) {

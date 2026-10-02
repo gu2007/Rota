@@ -780,8 +780,11 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
           continue;
         }
         if (campo.tipo === 'combobox' && !campo.opcoes.length) campo.opcoes = await lerOpcoesLista(pagina, campo);
-        // busca com lista fixa (ex.: "Sim/Não"): lê as opções e trata como lista de escolha
-        if (campo.tipo === 'texto' && campo.lista && !campo.opcoes.length) {
+        // "Phone Number" repetido: o que não é type=tel é o código do país
+        if (campo.tipo === 'texto' && campo.html !== 'tel' && /telefone|celular|phone|mobile/i.test(campo.rotulo)
+          && campos.some((o) => o !== campo && o.html === 'tel' && o.rotulo === campo.rotulo)) campo.codigoPais = true;
+        // busca com lista fixa (ex.: "Sim/Não", gênero): lê as opções e trata como lista de escolha
+        if (campo.tipo === 'texto' && (campo.lista || campo.autocompletar) && !campo.opcoes.length) {
           const opcoes = await lerOpcoesLista(pagina, campo);
           if (opcoes.length) Object.assign(campo, { tipo: 'combobox', opcoes });
         }
@@ -830,7 +833,7 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
         const nome = `"${campo.rotulo.slice(0, 120)}"`;
         if (faltando.some((f) => f.startsWith(nome))) continue;
         if (campo.tipo === 'combobox' && !campo.opcoes.length) campo.opcoes = await lerOpcoesLista(pagina, campo);
-        if (campo.tipo === 'texto' && campo.lista && !campo.opcoes.length) {
+        if (campo.tipo === 'texto' && (campo.lista || campo.autocompletar) && !campo.opcoes.length) {
           const opcoes = await lerOpcoesLista(pagina, campo);
           if (opcoes.length) Object.assign(campo, { tipo: 'combobox', opcoes });
         }
@@ -911,7 +914,12 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
       assinaturaAnterior = assinatura;
 
       await esperarBotao(pagina, [botoes.proximo, botoes.final], 6000); // a página pode ainda estar carregando
-      if (await pagina.evaluate(acharBotao, botoes.proximo)) {
+      const textoProximo = await pagina.evaluate(acharBotao, botoes.proximo);
+      // trava de segurança: botão com cara de envio nunca é tratado como "próximo"
+      if (textoProximo && /envi|submit|finaliz|conclu|candidat|apply|inscrev/i.test(textoProximo) && ctx.config.modoTeste) {
+        return fim('simulada', `Modo teste: tudo preenchido, parou antes de enviar (botão "${textoProximo}")`);
+      }
+      if (textoProximo) {
         pagina = await clicarBotao(pagina, contexto);
         pagina = await confirmarDialogo(pagina, contexto, ctx);
         continue;

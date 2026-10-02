@@ -27,13 +27,22 @@ const PERGUNTA_RUIM = (p) => !p || p.length < 8 || /^(sim|n[aã]o|true|false|out
 
 const CONTADOR = /^(m[aá]x(imo)?\.?\s*(de\s*)?[\d.]+\s*caracteres?|[\d.]+\s*\/\s*[\d.]+\s*caracteres?|[\d.]+\s*caracteres?( restantes)?)$/i;
 
+// "Avançar" nunca pode ser um botão que envia (no modo teste ele seria clicado!) nem um "Adicionar"
+const NAO_AVANCAR = /envi|submit|finaliz|conclu|confirm|candidat|aplica|apply|inscri|adicion|\badd\b|incluir|novo|nova|editar|\bedit\b|remov|exclu|apagar|delete/i;
+// Campos de uma lista repetida (cada experiência/formação tem os seus): uma resposta não vale para todas
+const CAMPO_DE_LISTA = /data de (inicio|termino|fim|conclusao)|start date|end date|from date|to date|(^|\s)(mes|ano|month|year)$|empregador|employer|nome da empresa|company name|cargo|job title|position title|supervisor|gestor|escola|school|institui|faculdade|universidade|degree|grau|principal|major|area de estudo|field of study|emprego atual|current(ly)? (job|employer|work)|atualmente trabalho|cidade empregadora|pais do empregador/;
+// Dados do endereço vão para o cofre criptografado, nunca para este arquivo
+const ENDERECO = /cep|codigo postal|postal code|zip|codigo do estado|state\/province|estado\/provincia|logradouro|endereco|address|bairro|numero da residencia/;
+
 // Remove o que foi aprendido errado, inclusive de gravações antigas
 function limpar(dados) {
   dados.botoesFechar = dados.botoesFechar.filter((t) => DISPENSA.test(t));
-  dados.botoesAvancar = dados.botoesAvancar.filter((t) => !LOGIN.test(t.trim()));
+  dados.botoesAvancar = dados.botoesAvancar.filter((t) => !LOGIN.test(t.trim()) && !NAO_AVANCAR.test(t));
   dados.botoesFinal = dados.botoesFinal.filter((t) => FINAL.test(t) && !/acompanh|minhas|ver candidatura/i.test(t));
   dados.textos = (dados.textos || []).filter((t) => !CONTADOR.test(String(t.pergunta).trim()) && !PERGUNTA_RUIM(t.pergunta));
-  dados.respostas = Object.fromEntries(Object.entries(dados.respostas || {}).filter(([, r]) => !PERGUNTA_RUIM(r.pergunta)));
+  dados.respostas = Object.fromEntries(Object.entries(dados.respostas || {})
+    .filter(([k, r]) => !PERGUNTA_RUIM(r.pergunta) && !CAMPO_DE_LISTA.test(k) && !ENDERECO.test(k)));
+  dados.textos = dados.textos.filter((t) => !CAMPO_DE_LISTA.test(chave(t.pergunta)));
   return dados;
 }
 
@@ -81,9 +90,10 @@ function aprender(eventos) {
       if (ev.depois.sucesso) { if (FINAL.test(ev.texto) && !/acompanh|minhas/i.test(ev.texto)) add('botoesFinal', ev.texto); }
       else if (CANDIDATAR.test(ev.texto) && !NAO_E_INICIO.test(ev.texto)) add('botoesCandidatar', ev.texto);
       else if (CANDIDATAR.test(ev.texto)) continue;
-      else if (ev.depois.mudouPagina && ['button', 'a', 'input'].includes(ev.tag)) add('botoesAvancar', ev.texto);
+      else if (ev.depois.mudouPagina && ['button', 'a', 'input'].includes(ev.tag) && !NAO_AVANCAR.test(ev.texto)) add('botoesAvancar', ev.texto);
     }
     if (ev.tipo === 'campo' && !ev.sensivel && !PERGUNTA_RUIM(ev.pergunta)) {
+      if (CAMPO_DE_LISTA.test(chave(ev.pergunta)) || ENDERECO.test(chave(ev.pergunta))) continue;
       const curta = typeof ev.valor === 'string' && ev.valor.length <= 60;
       const objetiva = ['select', 'radio', 'checkbox'].includes(ev.campo) || (['text', 'number'].includes(ev.campo) && curta);
       if (objetiva && ev.valor !== '' && ev.valor != null) {
