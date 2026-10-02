@@ -91,8 +91,13 @@ const SINONIMOS = [
   ['avancado', 'advanced'],
   ['fluente', 'fluent', 'nativo', 'native', 'proficiente'],
   ['linkedin', 'linked in'],
+  ['graduacao', 'bacharelado', 'bacharel', 'ensino superior', 'superior', 'bachelor', 'bachelors', 'bachelors degree', 'bachelor s degree', 'undergraduate', 'licenciatura'],
+  ['tecnologo', 'tecnologia', 'curso tecnologo', 'associate', 'associates degree', 'associate s degree'],
+  ['ensino medio', 'medio', 'high school', 'secondary'],
+  ['pos graduacao', 'especializacao', 'mba', 'postgraduate', 'post graduate'],
+  ['mestrado', 'master', 'masters', 'masters degree', 'master s degree'],
 ];
-const grupoDe = (t) => SINONIMOS.find((g) => g.includes(t));
+const grupoDe = (t) => SINONIMOS.find((g) => g.includes(t.replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()));
 
 function escolherOpcao(opcoes, resposta) {
   const r = norm(resposta);
@@ -101,7 +106,8 @@ function escolherOpcao(opcoes, resposta) {
   if (exata) return exata;
   const grupo = grupoDe(r);
   if (grupo) {
-    const sinonimo = opcoes.find((o) => grupo.includes(norm(o).replace(/[.!]+$/, '')));
+    const limpo = (t) => norm(t).replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+    const sinonimo = opcoes.find((o) => grupo.includes(limpo(o)));
     if (sinonimo) return sinonimo;
   }
   const contem = opcoes.find((o) => norm(o) && (r.includes(norm(o)) || norm(o).includes(r)));

@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { abrirNavegador, pausa, digitar, lerPagina, definirVelocidade } = require('../navegador/navegador');
 const { lerCampos, acharBotao, temDesafio, botaoDesativado } = require('../candidatura/leitor-pagina');
+const secoes = require('../candidatura/secoes');
 const { decidir, norm, CURRICULO, detectarPessoal, escolherOpcao } = require('../candidatura/respostas');
 const { dataLocal } = require('../util/tempo');
 const aprendizado = require('../candidatura/aprendizado');
@@ -209,6 +210,49 @@ async function preencher(pagina, campo, valor) {
       throw new Error(`Tipo de campo desconhecido: ${campo.tipo}`);
   }
   await pausa(400, 1200);
+}
+
+// "Adicionar experiência" / "Adicionar educação": um item por experiência/formação do Perfil
+async function preencherSecoes(pagina, ctx, vaga, iaFn) {
+  const feitos = [];
+  const achados = await pagina.evaluate(secoes.acharBotoesSecao).catch(() => []);
+  for (const { tipo } of achados) {
+    const itens = (ctx.listas?.[tipo] || []).slice(0, 5);
+    for (const [n, item] of itens.entries()) {
+      await pagina.evaluate(secoes.marcarCamposVelhos).catch(() => {});
+      const botao = pagina.locator(`[data-rota-secao="${tipo}"]`).first();
+      if (!(await botao.count())) break;
+      await botao.scrollIntoViewIfNeeded().catch(() => {});
+      await botao.click({ timeout: 5000 }).catch(() => {});
+      await pausa(1200, 1800);
+      const campos = await pagina.evaluate(lerCampos).catch(() => []);
+      const novos = new Set(await pagina.evaluate(secoes.idsNovos, campos.map((c) => c.id)).catch(() => []));
+      const doItem = campos.filter((c) => novos.has(c.id) && c.rotulo && !c.preenchido);
+      if (!doItem.length) break; // o botão não abriu nada
+      for (const campo of doItem) {
+        if (campo.tipo === 'texto' && (campo.lista || campo.autocompletar)) {
+          const opcoes = await lerOpcoesLista(pagina, campo);
+          if (opcoes.length) Object.assign(campo, { tipo: 'combobox', opcoes });
+        }
+        let d = secoes.valorDoItem(campo, item, tipo, ctx.perfil);
+        if (d?.ia) {
+          const r = await (iaFn || ia.responder)({ pergunta: campo.rotulo, opcoes: campo.opcoes, contexto: { perfil: ctx.perfil, listas: ctx.listas }, vaga, dica: `Formação: ${JSON.stringify(item)}` }).catch(() => null);
+          d = r && escolherOpcao(campo.opcoes, r) ? { valor: escolherOpcao(campo.opcoes, r) } : null;
+        }
+        if (!d) continue;
+        if (campo.tipo === 'checkbox' && d.valor === false) continue;
+        await preencher(pagina, campo, d.valor).catch(() => {});
+      }
+      const salvar = await pagina.evaluate(secoes.acharSalvarItem).catch(() => null);
+      if (salvar) {
+        await pagina.locator('[data-rota-salvar]').first().click({ timeout: 5000 }).catch(() => {});
+        await pausa(1000, 1500);
+      }
+      const nome = tipo === 'experiencias' ? `${item.cargo || ''} — ${item.empresa || ''}` : `${item.curso || ''} — ${item.instituicao || ''}`;
+      feitos.push({ pergunta: `${tipo === 'experiencias' ? 'Experiência' : 'Formação'} ${n + 1}`, resposta: nome, fonte: 'perfil' });
+    }
+  }
+  return feitos;
 }
 
 // login
@@ -618,6 +662,7 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
   fs.mkdirSync(pasta, { recursive: true });
   const respostas = [];
   let ultimo = null;
+  const secoesFeitas = new Set();
   let ajudasIA = 0;
   let passo = 0;
   let pagina;
@@ -824,6 +869,12 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
       if (destaque?.escolhidas.length && !respostas.some((r) => r.pergunta === 'Habilidades destacadas')) {
         respostas.push({ pergunta: 'Habilidades destacadas', resposta: destaque.escolhidas.join(', '), fonte: destaque.fonte });
       }
+      // Seções de experiência e formação (só em sites de empresas; a Gupy usa o currículo dela)
+      if (!ehGupy && !secoesFeitas.has(pagina.url())) {
+        secoesFeitas.add(pagina.url());
+        respostas.push(...await preencherSecoes(pagina, ctx, vaga, iaFn));
+      }
+
       // Confere o resultado: campo obrigatório que ficou vazio ou em vermelho
       // (o site recusou, o autocompletar apagou) ganha mais uma tentativa
       await pausa(700, 1000);
