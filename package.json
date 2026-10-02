@@ -30,7 +30,8 @@
     "dados:exportar": "node scripts/dados.js exportar",
     "dados:importar": "node scripts/dados.js importar",
     "salvar": "node scripts/salvar.js",
-    "marcar": "node scripts/marcar.js"
+    "marcar": "node scripts/marcar.js",
+    "perfil:importar": "node scripts/perfil-importar.js"
   },
   "engines": {
     "node": ">=18"

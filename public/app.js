@@ -383,6 +383,9 @@ async function paginaPerfil() {
 
     <div class="cartao" style="margin-bottom:18px">
       <div class="progresso-perfil"><span class="sub">Perfil ${pct}% completo</span><div class="barra"><div style="width:${pct}%"></div></div></div>
+      <p class="sub" style="margin:10px 0 0">Ir para:
+        <a href="#/perfil" data-rolar="form-pessoais">Dados pessoais</a>
+        ${Object.entries(LISTAS_PERFIL).map(([nome, def]) => ` · <a href="#/perfil" data-rolar="lista-${nome}">${def.titulo}</a>`).join('')}</p>
     </div>
 
     <form class="cartao" id="form-perfil">
@@ -424,7 +427,7 @@ function blocoLista(nome, def, itens) {
   const editando = editandoLista.nome === nome;
   const itemEditado = editando && editandoLista.id != null ? itens.find((i) => i.id === editandoLista.id) : {};
   return `
-    <section class="cartao secao">
+    <section class="cartao secao" id="lista-${nome}">
       <div class="topo" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <h2 style="margin:0">${def.titulo}</h2>
         ${editando ? '' : `<button class="botao pequeno leve" data-lista="${nome}" data-editar="novo">Adicionar</button>`}
@@ -723,6 +726,13 @@ const conteudo = $('#conteudo');
 const dadosForm = (form) => Object.fromEntries(new FormData(form).entries());
 
 conteudo.addEventListener('click', (ev) => {
+  // atalhos do Perfil: rola até a seção sem trocar de página
+  const rolar = ev.target.closest('a[data-rolar]');
+  if (rolar) {
+    ev.preventDefault();
+    document.getElementById(rolar.dataset.rolar)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   const link = ev.target.closest('a[data-ir-status]');
   if (link) estadoVagas.status = link.dataset.irStatus;
 });

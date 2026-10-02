@@ -58,8 +58,10 @@ function valorDoItem(campo, item, tipo, perfil = {}) {
   const atual = !item.fim || fim.atual;
 
   // "trabalho aqui atualmente" / "cursando"
+  // formação em andamento: marca "cursando", mas a previsão de término continua sendo preenchida
+  const emAndamento = tipo === 'formacoes' && /andamento|cursando/.test(norm(item.status));
   if (campo.tipo === 'checkbox') {
-    return /atualmente|currently|current|presente|present|cursando|em andamento|ainda (trabalho|estudo)/.test(r) ? { valor: !!atual } : null;
+    return /atualmente|currently|current|presente|present|cursando|em andamento|ainda (trabalho|estudo)/.test(r) ? { valor: !!(atual || emAndamento) } : null;
   }
   const ehInicio = /inicio|start|from|desde|admissao|ingresso|(^|\s)de$/.test(r);
   const ehFim = /termino|fim\b|\bend\b|to date|(^|\s)(ate|para|to)$|conclus|saida|graduat|formatura|previsao/.test(r);
