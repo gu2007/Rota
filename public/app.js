@@ -547,6 +547,10 @@ async function paginaAjustes() {
               <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="incluir_suporte" ${c.incluir_suporte === 'true' ? 'checked' : ''}> Suporte, infraestrutura e redes</label>
             </div>
             <span class="ajuda">Sem "Júnior", só entram vagas de estágio. Sem "Suporte", só desenvolvimento, dados e nuvem.</span></div>
+          <div class="campo"><label for="a-maxcand">Máximo de candidatos (LinkedIn)</label><input id="a-maxcand" name="max_candidatos" type="number" min="0" value="${esc(c.max_candidatos ?? '100')}">
+            <span class="ajuda">Acima disso a chance de ser visto é baixa. 0 = sem limite.</span></div>
+          <div class="campo"><label for="a-maxdias">Publicada há no máximo (dias)</label><input id="a-maxdias" name="max_dias" type="number" min="1" value="${esc(c.max_dias ?? '2')}">
+            <span class="ajuda">Vagas mais antigas são descartadas.</span></div>
           <div class="campo inteiro"><label for="a-excluir">Nunca se candidatar se tiver</label>
             <input id="a-excluir" name="termos_excluir" type="text" value="${esc(c.termos_excluir)}">
             <span class="ajuda">Ex.: sênior; pleno; especialista</span></div>
@@ -857,6 +861,8 @@ conteudo.addEventListener('submit', async (ev) => {
         incluir_afirmativas: f.get('incluir_afirmativas') ? 'true' : 'false',
         niveis_aceitos: f.get('nivel_junior') ? 'estagio; junior' : 'estagio',
         incluir_suporte: f.get('incluir_suporte') ? 'true' : 'false',
+        max_candidatos: f.get('max_candidatos'),
+        max_dias: f.get('max_dias'),
         velocidade: f.get('velocidade_rapida') ? 'rapida' : 'humana',
         nota_minima: f.get('nota_minima'),
         termos_busca: f.get('termos_busca'),

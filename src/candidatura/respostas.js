@@ -194,7 +194,7 @@ async function decidirBase(campo, { perfil: perfilBase, listas, respostasFixas, 
   const partes = String(perfilBase?.nome || '').trim().split(/\s+/);
   const perfil = { ...perfilBase, primeiro_nome: partes[0] || '', sobrenome: partes.slice(1).join(' ') };
   if (separaNome) perfil.nome = perfil.primeiro_nome; // ao lado de "Sobrenome", só o primeiro nome
-  const rotulo = norm(campo.rotulo).replace(/^\d{1,2}\s*[.)\-:]\s*/, '');
+  const rotulo = norm(campo.rotulo).replace(/^\d{1,2}\s*[.)\-:→>]\s*/, '');
   // Respostas já dadas vão para a IA reconhecer a mesma pergunta escrita de outro jeito
   const objetivasTreino = Object.values(aprendidas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) }));
   const contexto = { perfil, listas, respostasFixas, textosTreino, respondidas: [...respondidas, ...objetivasTreino] };
@@ -207,6 +207,13 @@ async function decidirBase(campo, { perfil: perfilBase, listas, respostasFixas, 
 
   // Campo-armadilha para robôs ("honeypot"): fica sempre vazio
   if (/honeypot|pote de mel|leave (this )?(field )?(blank|empty)|deixe (este campo )?(em branco|vazio)|nao preencha este campo/.test(rotulo)) return null;
+
+  // País (de origem, de residência): Brasil
+  if (/^(pais|country)\b|pais (de|onde) (origem|residencia|mora|vive)|country of residence/.test(rotulo) && !/codigo|code|telefone|phone/.test(rotulo)) {
+    if (!ehEscolha(campo)) return { valor: 'Brasil', fonte: 'regra' };
+    const opcao = escolherOpcao(campo.opcoes || [], 'Brasil') || escolherOpcao(campo.opcoes || [], 'Brazil');
+    if (opcao) return { valor: opcao, fonte: 'regra' };
+  }
 
   // Código do país digitável: nunca recebe o número do telefone
   if (campo.codigoPais && !ehEscolha(campo)) return { valor: 'Brasil', fonte: 'regra' };

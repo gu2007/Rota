@@ -64,8 +64,23 @@ function lerVagaLinkedin() {
   const modelo = /h[ií]brid/i.test(topo) ? 'hibrido' : /remot/i.test(topo) ? 'remoto' : /presencial|on-site/i.test(topo) ? 'presencial' : null;
   const descricao = txt(document.querySelector('#job-details, [class*=jobs-description__content], [class*=jobs-box__html-content], .show-more-less-html__markup, [class*=description__text]'));
 
+  // "há 3 dias · Mais de 100 candidaturas" / "2 weeks ago · Over 200 applicants"
+  // só o começo da página: na descrição "6 meses de estágio" não é a data da vaga
+  const linhas = [...document.querySelectorAll('[class*=primary-description], [class*=tertiary-description], [class*=topcard__flavor-row], .topcard__flavor--bullet, [class*=posted-date], [class*=num-applicants]')].map(txt).join(' · ');
+  const cabeca = `${linhas} · ${topo.slice(0, 300)}`.toLowerCase();
+  let candidatos = null;
+  const mc = cabeca.match(/(mais de|over|more than)\s*([\d.]+)\s*(candidat|pessoas clicaram|applicants|people clicked)/) || cabeca.match(/([\d.]+)\s*(candidaturas|candidatos|pessoas clicaram|applicants|people clicked)/);
+  if (mc) candidatos = Number(String(mc[2] && /\d/.test(mc[2]) ? mc[2] : mc[1]).replace(/\./g, '')) + (/mais de|over|more than/.test(mc[1]) ? 1 : 0);
+  let dias = null;
+  const md = cabeca.match(/(?:h[aá]|publicad[ao] h[aá]|reposted|republicad[ao] h[aá])?\s*(\d+|um|uma|an?|one)\s*(minuto|hora|dia|semana|m[eê]s|minute|hour|day|week|month)/);
+  if (md) {
+    const n = /^\d+$/.test(md[1]) ? Number(md[1]) : 1;
+    const u = md[2];
+    dias = /min|hora|hour/.test(u) ? 0 : /dia|day/.test(u) ? n : /semana|week/.test(u) ? n * 7 : 30 * n;
+  }
+
   return {
-    titulo, empresa: empresa || null, local, modelo, descricao: descricao.slice(0, 8000),
+    titulo, empresa: empresa || null, local, modelo, descricao: descricao.slice(0, 8000), candidatos, dias,
     externo, simplificada, temBotao: !!candidatar, botao: textoBotao.slice(0, 60) || null,
     fechada: /n[aã]o (est[aá] )?aceita(ndo)? mais candidaturas|no longer accepting applications|vaga (foi )?encerrada|candidaturas? encerradas?|inscri[cç][oõ]es encerradas|n[aã]o est[aá] mais dispon[ií]vel|vaga (foi )?(expirad|pausad|fechad)|this job is no longer available|job (has )?expired|no longer available/i.test(corpo.slice(0, 6000)),
     pedeLogin: /entre para ver|sign in to|fa[cç]a login|entrar no linkedin/i.test(corpo.slice(0, 3000)) && !titulo,
@@ -160,6 +175,13 @@ async function resolverVaga(vaga, { pagina, contexto, config, repo }) {
     titulo: info.titulo || vaga.titulo, empresa: info.empresa || vaga.empresa,
     local: info.local || vaga.local, modelo: info.modelo || vaga.modelo, descricao: info.descricao || vaga.descricao,
   };
+  // Muita concorrência ou vaga antiga: a chance de ser visto é baixa
+  if (info.candidatos != null && config.maxCandidatos && info.candidatos > config.maxCandidatos) {
+    return { dados: { ...base, status: 'descartada', motivo_status: `Mais de ${config.maxCandidatos} candidatos no LinkedIn` }, resumo: `descartada: ${info.candidatos > 100 ? 'mais de 100' : info.candidatos} candidatos` };
+  }
+  if (info.dias != null && config.maxDias != null && info.dias > config.maxDias) {
+    return { dados: { ...base, status: 'descartada', motivo_status: `Publicada há ${info.dias} dias (limite: ${config.maxDias})` }, resumo: `descartada: publicada há ${info.dias} dias` };
+  }
   if (info.simplificada && !info.externo) {
     return { dados: { ...base, status: 'para_voce', motivo_status: 'Candidatura simplificada do LinkedIn: essa é com você, pelo app (o bot não usa a sua conta do LinkedIn para se candidatar)' }, resumo: `candidatura simplificada (botão principal: "${info.botao}")` };
   }
@@ -198,7 +220,9 @@ async function buscarVagas(ctx, { paginas = 2 } = {}) {
   const termos = ctx.config?.termosBusca || [];
   if (!termos.length) return [];
   const local = String(ctx.config?.localizacao || 'São Paulo').split(/[;,]/)[0].trim() || 'São Paulo';
-  const achadas = await busca.buscar({ termos, local, paginas, log: ctx.log });
+  // só vagas recentes: o LinkedIn filtra pela idade (1 dia = 24h; 2 dias = 48h...)
+  const periodo = `r${Math.max(1, ctx.config?.maxDias ?? 2) * 86400}`;
+  const achadas = await busca.buscar({ termos, local, paginas, periodo, log: ctx.log });
   busca.anotarBusca(achadas.length);
   await ctx.log('info', 'linkedin', `Busca no LinkedIn: ${achadas.length} vagas para ${termos.length} termos em ${local}.`);
   return achadas;

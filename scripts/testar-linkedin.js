@@ -3,6 +3,7 @@
 //   npm run testar:linkedin            -> busca e abre até 10
 //   npm run testar:linkedin 20         -> abre até 20
 //   npm run testar:linkedin <link>     -> só essa vaga
+//   npm run testar:linkedin reconferir -> abre de novo as vagas do LinkedIn já na fila (data e nº de candidatos)
 const { ambiente, lerConfiguracoes } = require('../src/config');
 const { registrarVaga } = require('../src/agendador/executor');
 const { normalizarUrl } = require('../src/util/url');
@@ -15,14 +16,19 @@ async function main() {
   const config = lerConfiguracoes(await repo.config.obter());
   const args = process.argv.slice(2);
   const link = args.find((a) => /^https?:/i.test(a));
-  const porVez = Number(args.find((a) => /^\d+$/.test(a))) || 10;
+  const porVez = Number(args.find((a) => /^\d+$/.test(a))) || (args.includes('reconferir') ? 50 : 10);
   console.log('\n=== Rota · LinkedIn: buscar vagas e descobrir onde é a candidatura (nada é enviado) ===\n');
 
+  if (args.includes('reconferir')) {
+    const fila = (await repo.vagas.listar({ status: 'na_fila', limite: 500 })).filter((v) => /linkedin\.com\/jobs\/view/.test(v.url) && v.plataforma_envio !== 'linkedin');
+    for (const v of fila) await repo.vagas.atualizar(v.id, { plataforma_envio: 'linkedin', motivo_status: 'Conferir data e candidatos de novo' });
+    console.log(`  ${fila.length} vagas da fila vão ser conferidas de novo (data de publicação e nº de candidatos).\n`);
+  }
   if (link) {
     const r = await registrarVaga(repo, { url: normalizarUrl(link), titulo: 'Vaga do LinkedIn (teste)' }, { origem_plataforma: 'manual', origem_coleta: 'manual' });
     // força a fila no teste, mesmo com a nota do título provisório
     await repo.vagas.atualizar(r.id, { status: 'na_fila', plataforma_envio: 'linkedin' });
-  } else {
+  } else if (!args.includes('reconferir')) {
     // 1) busca: muitas vagas de uma vez; a nota decide quem entra na fila
     console.log(`1) Buscando no LinkedIn: ${config.termosBusca.join(' · ') || '(sem termos em Ajustes)'}\n`);
     const achadas = await linkedin.buscarVagas({ config, log }, { paginas: 3 });

@@ -19,7 +19,7 @@ const MAX_ETAPAS = 15;
 
 // textos aprendidos no modo aprender são somados a estes
 const BASE_CANDIDATAR = 'candidatar-se|candidate-se|quero me candidatar|candidatar|candidatar-se agora|aplicar para a vaga|aplicar|candidatura r[aá]pida|aplica[cç][aã]o r[aá]pida|candidatar-se com 1 clique|inscrever-se|inscreva-se|quero participar|quero me inscrever|tenho interesse|i.?m interested|apply|apply now|apply for this (job|position|role)';
-const BASE_PROXIMO = 'continuar( com a vaga| candidatura| para a vaga| inscri[cç][aã]o)?|pr[oó]xim[oa]( etapa| passo)?|avan[cç]ar|salvar e continuar|seguir|ir para a pr[oó]xima etapa|next|next step|continue|save and continue';
+const BASE_PROXIMO = 'ok|continuar( com a vaga| candidatura| para a vaga| inscri[cç][aã]o)?|pr[oó]xim[oa]( etapa| passo)?|avan[cç]ar|salvar e continuar|seguir|ir para a pr[oó]xima etapa|next|next step|continue|save and continue';
 const BASE_FINAL = 'finalizar( candidatura)?|enviar candidatura|enviar( minha)? candidatura|enviar|concluir( candidatura)?|confirmar candidatura|finalizar inscri[cç][aã]o|submit|submit application|send application|enviar inscri[cç][aã]o';
 
 const JA_CANDIDATADO = /voc[eê] j[aá] se candidatou|you have already applied|voc[eê] j[aá] se inscreveu|candidatura j[aá] (foi )?(realizada|enviada)|j[aá] est[aá] participando|voc[eê] j[aá] est[aá] (inscrito|participando)/i;
@@ -153,6 +153,11 @@ async function preencher(pagina, campo, valor) {
         // sem clicar numa sugestão, muitos sites apagam o que foi digitado
         await escolherSugestao(pagina, String(valor), 6000);
         break;
+      }
+      // telefone com o código do país já escrito (+55): mantém e completa
+      if (campo.html === 'tel') {
+        const atual = String(await el.inputValue().catch(() => '')).trim();
+        if (/^\+?\d{1,3}$/.test(atual) && !String(valor).startsWith(atual)) valor = `${atual} ${String(valor).replace(/^\+?55\s*/, '')}`;
       }
       await digitar(el, campo.limite ? String(valor).slice(0, campo.limite) : valor);
       // alguns campos viram autocompletar depois de digitar

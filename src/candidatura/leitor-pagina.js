@@ -51,7 +51,8 @@ function lerCampos() {
     if (fs?.querySelector('legend')) return textoDe(fs.querySelector('legend'));
     let p = el.parentElement;
     for (let i = 0; i < 4 && p; i++, p = p.parentElement) {
-      const primeiro = linhasDe(p)[0];
+      // "Selecione o país" é o texto de dentro da caixa, não a pergunta
+      const primeiro = linhasDe(p).filter((l) => !/^(selecione|select|escolha|choose|pesquise|search|digite|type)\b/i.test(l))[0];
       if (primeiro && primeiro.length < 300) return primeiro;
     }
     // Componentes (shadow DOM): o rótulo fica num elemento de fora, às vezes várias camadas acima
@@ -273,11 +274,16 @@ function lerCampos() {
     if (el.readOnly && !listaSoLeitura) return;
     const tipoInput = (el.getAttribute('type') || '').toLowerCase();
     // Input de arquivo costuma ficar escondido atrás de um botão
-    if (tipoInput === 'checkbox' ? !caixaVisivel(el) : (tipoInput !== 'file' && !visivel(el))) return;
+    // busca de lista "invisível" (react-select): o input fica transparente dentro da caixa que aparece
+    const buscaDeLista = el.tagName === 'INPUT' && (el.getAttribute('aria-autocomplete') || el.getAttribute('role') === 'combobox')
+      && !visivel(el) && el.getBoundingClientRect().width > 0 && el.parentElement && visivel(el.parentElement);
+    if (tipoInput === 'checkbox' ? !caixaVisivel(el) : (tipoInput !== 'file' && !visivel(el) && !buscaDeLista)) return;
     if (el.closest('[data-rota-ignorar], header, nav, footer')) return;
     if (el.getAttribute('role') === 'combobox' && el.tagName === 'INPUT' && el.getAttribute('aria-autocomplete') === 'none') return;
 
-    const r = rotulo(el);
+    // na busca de lista o texto ao lado é o valor escolhido ("Brasil"); a pergunta está acima
+    const r = buscaDeLista ? (textoAcima(el) || rotulo(el)) : rotulo(el);
+    const mostrado = buscaDeLista ? (linhasDe(el.parentElement)[0] || '') : '';
     let tipo = 'texto', opcoes = [], preenchido = false;
     if (el.tagName === 'TEXTAREA') { tipo = 'textarea'; preenchido = !!el.value.trim(); }
     else if (el.tagName === 'SELECT') {
@@ -289,6 +295,9 @@ function lerCampos() {
       tipo = 'combobox'; preenchido = !!textoDe(el) && !/^(selecione|escolha|select|choose)/i.test(textoDe(el));
     } else if (tipoInput === 'checkbox') { tipo = 'checkbox'; preenchido = el.checked; }
     else if (tipoInput === 'file') { tipo = 'arquivo'; preenchido = el.files?.length > 0; }
+    else if (buscaDeLista) { preenchido = !!el.value.trim() || (!!mostrado && !/^(selecione|select|escolha|choose|pesquise|search|digite|type)\b/i.test(mostrado)); }
+    // telefone que já vem com "+55": ainda falta o número
+    else if (tipoInput === 'tel') { preenchido = !!el.value.trim() && !/^\+?\d{1,3}\s*$/.test(el.value.trim()); }
     else { preenchido = !!el.value.trim(); }
 
     campos.push({
@@ -309,6 +318,24 @@ function lerCampos() {
       lista: el.tagName === 'INPUT' && (el.getAttribute('aria-haspopup') === 'listbox' || listaSoLeitura),
     });
   });
+
+  // Janela por cima do formulário (pergunta a pergunta, modal): só vale o que está nela
+  const camada = (() => {
+    const vw = innerWidth, vh = innerHeight;
+    const candidatas = todos('[role=dialog], [aria-modal=true], dialog[open], body *').filter((e) => {
+      if (!(e.matches('[role=dialog], [aria-modal=true], dialog[open]') || getComputedStyle(e).position === 'fixed')) return false;
+      const r = e.getBoundingClientRect();
+      if (r.width * r.height < vw * vh * 0.35 || !visivel(e)) return false;
+      return todos('input:not([type=hidden]), textarea, select, [role=radio], [role=option], [role=checkbox]', e).some(visivel);
+    });
+    return candidatas[candidatas.length - 1] || null;
+  })();
+  if (camada) {
+    const dentro = (el) => { for (let n = el; n; n = n.parentElement || (n.getRootNode && n.getRootNode().host)) if (n === camada) return true; return false; };
+    const doCampo = (c) => todos(`[data-rota="${c.id}"]`)[0];
+    const restantes = campos.filter((c) => { const e = doCampo(c); return e && dentro(e); });
+    if (restantes.length) campos.splice(0, campos.length, ...restantes);
+  }
 
   // Dois uploads iguais de documento (ex.: "Choose a file" no topo e no fim): o primeiro costuma ser
   // o "preencher com o currículo"; o do currículo de verdade é o último.
@@ -332,7 +359,19 @@ function acharBotao(fonteRegex) {
     return t;
   };
   const re = new RegExp(fonteRegex, 'i');
-  const candidatos = todos('button, a, [role=button], input[type=submit]');
+  let candidatos = todos('button, a, [role=button], input[type=submit]');
+  // janela por cima da página (modal, pergunta a pergunta): o botão certo está nela
+  const visivelB = (e) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+  const camada = todos('[role=dialog], [aria-modal=true], dialog[open], body *').filter((e) => {
+    if (!(e.matches('[role=dialog], [aria-modal=true], dialog[open]') || getComputedStyle(e).position === 'fixed')) return false;
+    const r = e.getBoundingClientRect();
+    return r.width * r.height >= innerWidth * innerHeight * 0.35 && visivelB(e) && todos('button, [role=button], input, textarea', e).some(visivelB);
+  }).pop();
+  if (camada) {
+    const dentro = (el) => { for (let n = el; n; n = n.parentElement || (n.getRootNode && n.getRootNode().host)) if (n === camada) return true; return false; };
+    const naCamada = candidatos.filter(dentro);
+    if (naCamada.length) candidatos = naCamada;
+  }
   for (const el of candidatos) {
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;

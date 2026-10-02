@@ -11,7 +11,7 @@ const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-
 // Sem acento, minúscula, sem o "*" de obrigatório e sem ":" no fim
 const chave = (t) => norm(t).replace(/[\s*:]+$/, '');
 // Igual, mas também sem a numeração do formulário ("3. Qual...")
-const chavePergunta = (t) => chave(t).replace(/^\d{1,2}\s*[.)\-:]\s*/, '').slice(0, 400);
+const chavePergunta = (t) => chave(t).replace(/^\d{1,2}\s*[.)\-:→>]\s*/, '').slice(0, 400);
 const escapar = (t) => String(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Botão de fechar aviso precisa ter cara de dispensar algo

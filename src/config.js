@@ -38,6 +38,8 @@ function lerConfiguracoes(bruto) {
     // sem nada salvo: só estágio
     aceitaJunior: /junior/.test(String(bruto.niveis_aceitos || 'estagio')),
     incluirSuporte: bruto.incluir_suporte === 'true',
+    maxCandidatos: Number(bruto.max_candidatos ?? 100) || 0,  // 0 = sem limite
+    maxDias: Number(bruto.max_dias ?? 2),
     velocidade: bruto.velocidade === 'humana' ? 'humana' : 'rapida',
   };
 }
