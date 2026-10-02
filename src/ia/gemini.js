@@ -129,6 +129,26 @@ async function aproveitarResposta({ pergunta, resposta, pendentes }, { fetchFn =
   } catch { return []; }
 }
 
+// Pergunta nova escrita de outro jeito: acha qual pergunta já respondida pede a mesma informação.
+// Devolve o índice em "conhecidas" ou -1.
+async function mesmaPergunta({ pergunta, opcoes = [], conhecidas }, { fetchFn = fetch } = {}) {
+  if (!disponivel() || !conhecidas.length) return null; // null: não deu para comparar (não guarda)
+  const prompt = [
+    'Um robô preenche formulários de vagas de emprego. Apareceu uma pergunta NOVA. Veja se alguma das perguntas JÁ RESPONDIDAS abaixo pede EXATAMENTE a mesma informação, só que escrita de outro jeito (outra língua, outras palavras).',
+    'Exemplos de iguais: "Qual seu gênero?" = "What is your gender?" = "Gênero com o qual você se identifica"; "Pretensão salarial" = "Desired salary" = "Expectativa de remuneração".',
+    'Exemplos de diferentes: "nível de inglês" ≠ "nível de espanhol"; "possui deficiência?" ≠ "precisa de adaptação?"; "cidade onde mora" ≠ "cidade da vaga".',
+    'Na dúvida, responda 0. Responda SOMENTE um JSON: {"numero": N} (0 se nenhuma).',
+    `PERGUNTA NOVA: ${pergunta}${opcoes.length ? `\nopções: ${opcoes.slice(0, 15).join(' | ')}` : ''}`,
+    `JÁ RESPONDIDAS:\n${conhecidas.map((c, i) => `${i + 1}. ${c}`).join('\n')}`,
+  ].join('\n\n');
+  const texto = await chamar(prompt, { temperatura: 0, json: true, fetchFn }).catch(() => null);
+  if (!texto) return null;
+  try {
+    const n = Number(JSON.parse(String(texto).replace(/^```(json)?|```$/g, '').trim()).numero);
+    return n >= 1 && n <= conhecidas.length ? n - 1 : -1;
+  } catch { return null; }
+}
+
 // Escolhe as habilidades do currículo que mais combinam com a vaga
 async function escolherHabilidades({ opcoes, quantas, vaga }, { fetchFn = fetch } = {}) {
   if (!disponivel() || !opcoes.length || quantas <= 0) return [];
@@ -225,4 +245,4 @@ async function entenderEmailProcesso({ assunto, de, texto, links = [], data }, {
   } catch { return null; }
 }
 
-module.exports = { responder, escolherBotao, aproveitarResposta, escolherHabilidades, completarVagasEmail, planejarTela, entenderEmailProcesso, SITUACOES, chamar, disponivel, montarPrompt, descreverCandidato, SEM_RESPOSTA, BOTAO_PROIBIDO };
+module.exports = { responder, escolherBotao, aproveitarResposta, mesmaPergunta, escolherHabilidades, completarVagasEmail, planejarTela, entenderEmailProcesso, SITUACOES, chamar, disponivel, montarPrompt, descreverCandidato, SEM_RESPOSTA, BOTAO_PROIBIDO };

@@ -96,14 +96,24 @@ async function clicarBotao(pagina, contexto) {
 }
 
 // listas que só mostram as opções depois de abertas
+// Texto de cada opção visível. Em componentes o texto fica fora do elemento (no <slot>)
+const TEXTO_OPCAO = (els) => els.map((e) => {
+  let t = (e.innerText || '').replace(/\s+/g, ' ').trim();
+  if (!t && e.querySelectorAll) t = [...e.querySelectorAll('slot')].flatMap((s) => s.assignedNodes({ flatten: true })).map((n) => n.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+  const host = !t && e.getRootNode && e.getRootNode().host;
+  if (host) t = (host.innerText || host.textContent || '').replace(/\s+/g, ' ').trim();
+  return t || (e.getAttribute('aria-label') || '').trim();
+});
+const textosOpcoes = (loc) => loc.evaluateAll(TEXTO_OPCAO).catch(() => []);
+
 async function lerOpcoesLista(pagina, campo) {
   const el = pagina.locator(`[data-rota="${campo.id}"]`);
   try {
     await el.scrollIntoViewIfNeeded().catch(() => {});
     await el.click({ timeout: 5000 });
     await pagina.locator('[role=option]:visible').first().waitFor({ timeout: 3000 });
-    const textos = await pagina.locator('[role=option]:visible').allInnerTexts();
-    return [...new Set(textos.map((t) => t.replace(/\s+/g, ' ').trim()))]
+    const textos = await textosOpcoes(pagina.locator('[role=option]:visible'));
+    return [...new Set(textos)]
       .filter((t) => t && !/^(selecione|escolha|select|choose)\b/i.test(t));
   } catch { return []; }
   finally {
@@ -117,8 +127,8 @@ async function escolherSugestao(pagina, valor, esperaMs = 3500, soParecida = fal
   const opcoes = pagina.locator('[role=option]:visible, [role=listbox] li:visible, .pac-item:visible, [class*=suggestion i]:visible, [class*=autocomplete i] li:visible');
   const fim = Date.now() + esperaMs;
   while (Date.now() < fim && !(await opcoes.count().catch(() => 0))) await pausa(250, 300);
-  const textos = (await opcoes.allInnerTexts().catch(() => [])).map((t) => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
-  if (!textos.length) return false;
+  const textos = await textosOpcoes(opcoes);
+  if (!textos.filter(Boolean).length) return false;
   const base = valor.split(',')[0].trim();
   const comBase = textos.filter((t) => norm(t).includes(norm(base)));
   const escolhido = comBase.find((t) => /brasil|brazil|\bsp\b|s[aã]o paulo/i.test(t) && /brasil|brazil/i.test(t))
@@ -138,7 +148,8 @@ async function preencher(pagina, campo, valor) {
       if (campo.autocompletar) {
         // digita só o começo ("São Paulo", sem ", SP") e escolhe a sugestão
         await digitar(el, String(valor).split(',')[0].trim());
-        await escolherSugestao(pagina, String(valor));
+        // sem clicar numa sugestão, muitos sites apagam o que foi digitado
+        await escolherSugestao(pagina, String(valor), 6000);
         break;
       }
       await digitar(el, campo.limite ? String(valor).slice(0, campo.limite) : valor);
@@ -179,9 +190,19 @@ async function preencher(pagina, campo, valor) {
       await el.click();
       await pausa(400, 900);
       const opcoes = pagina.locator('[role=option]:visible');
-      const exata = opcoes.filter({ hasText: new RegExp(`^\\s*${String(valor).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`) }).first();
-      const item = (await exata.count()) ? exata : opcoes.filter({ hasText: valor }).first();
-      await item.click();
+      const textos = await textosOpcoes(opcoes);
+      let i = textos.findIndex((t) => norm(t) === norm(valor));
+      if (i < 0) i = textos.findIndex((t) => norm(t).includes(norm(valor)));
+      // lista com busca: digita para filtrar e procura de novo
+      if (i < 0) {
+        await pagina.keyboard.type(String(valor).slice(0, 30), { delay: 40 }).catch(() => {});
+        await pausa(700, 1000);
+        const filtrados = await textosOpcoes(opcoes);
+        i = filtrados.findIndex((t) => norm(t) === norm(valor));
+        if (i < 0) i = filtrados.findIndex((t) => norm(t).includes(norm(valor)));
+      }
+      if (i < 0) throw new Error(`opção "${valor}" não apareceu na lista`);
+      await opcoes.nth(i).click();
       break;
     }
     default:
@@ -233,11 +254,19 @@ async function acharBotaoProvedor(pagina, provedor) {
 function listarClicaveis() {
   // inclui shadow DOM (SmartRecruiters)
   const todos = (sel, raiz = document) => { const out = [...raiz.querySelectorAll(sel)]; for (const e of raiz.querySelectorAll('*')) if (e.shadowRoot) out.push(...todos(sel, e.shadowRoot)); return out; };
+  const textoDoBotao = (e) => {
+    let t = (e.innerText || e.value || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    // botão de componente: o texto fica no <slot> ou no elemento de fora
+    if (!t && e.querySelectorAll) t = [...e.querySelectorAll('slot')].flatMap((s) => s.assignedNodes({ flatten: true })).map((n) => n.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+    const host = !t && e.getRootNode && e.getRootNode().host;
+    if (host) t = (host.innerText || host.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    return t;
+  };
   return [...todos('button, a, [role=button], [onclick], [tabindex]')]
     .filter((e) => e.getBoundingClientRect().width > 0)
     .slice(0, 60)
     .map((e) => ({
-      tag: e.tagName.toLowerCase(), texto: (e.innerText || '').trim().slice(0, 40), role: e.getAttribute('role'),
+      tag: e.tagName.toLowerCase(), texto: textoDoBotao(e).slice(0, 40), role: e.getAttribute('role'),
       aria: e.getAttribute('aria-label'), testid: e.getAttribute('data-testid'), id: e.id || null,
       classe: String(e.className || '').slice(0, 80), href: e.getAttribute('href'),
     }));
@@ -529,6 +558,14 @@ async function agenteIA(pagina, ctx, vaga, { respostas, textosTreino = [] }) {
 function listarBotoesIA() {
   // inclui shadow DOM (SmartRecruiters)
   const todos = (sel, raiz = document) => { const out = [...raiz.querySelectorAll(sel)]; for (const e of raiz.querySelectorAll('*')) if (e.shadowRoot) out.push(...todos(sel, e.shadowRoot)); return out; };
+  const textoDoBotao = (e) => {
+    let t = (e.innerText || e.value || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    // botão de componente: o texto fica no <slot> ou no elemento de fora
+    if (!t && e.querySelectorAll) t = [...e.querySelectorAll('slot')].flatMap((s) => s.assignedNodes({ flatten: true })).map((n) => n.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+    const host = !t && e.getRootNode && e.getRootNode().host;
+    if (host) t = (host.innerText || host.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    return t;
+  };
   todos('[data-rota-ia]').forEach((e) => e.removeAttribute('data-rota-ia'));
   const vistos = new Set();
   const lista = [];
@@ -537,7 +574,7 @@ function listarBotoesIA() {
     if (r.width < 2 || r.height < 2 || e.disabled || e.getAttribute('aria-disabled') === 'true') continue;
     const st = getComputedStyle(e);
     if (st.visibility === 'hidden' || st.display === 'none') continue;
-    const texto = ((e.innerText || e.value || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()).slice(0, 60);
+    const texto = textoDoBotao(e).slice(0, 60);
     if (!texto || vistos.has(texto.toLowerCase())) continue;
     vistos.add(texto.toLowerCase());
     e.setAttribute('data-rota-ia', String(lista.length));
@@ -566,7 +603,8 @@ async function ajudaDaIA(pagina, situacao, vaga, ctx) {
 }
 
 // plataforma: 'gupy' ou 'sites'
-async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma = 'gupy' } = {}) {
+// aoTravar: se a candidatura não terminar, recebe a janela aberta (você termina e o robô observa)
+async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma = 'gupy', aoTravar } = {}) {
   const ehGupy = plataforma === 'gupy';
   definirVelocidade(ctx.config?.velocidade);
   const memoria = aprendizado.carregar();
@@ -579,6 +617,7 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
   const pasta = path.join(PASTA_LOGS, '..', plataforma, `${dataLocal()}-vaga-${vaga.id}`);
   fs.mkdirSync(pasta, { recursive: true });
   const respostas = [];
+  let ultimo = null;
   let ajudasIA = 0;
   let passo = 0;
   let pagina;
@@ -593,6 +632,7 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
   };
   const fim = async (resultado, motivo, nome = resultado) => {
     await registrar(nome, { resultado, motivo, url: pagina?.url(), respostas });
+    ultimo = { resultado, motivo };
     return { resultado, motivo, respostas, pasta };
   };
   // site que pede conta ou tem CAPTCHA: vai para a aba "Para você"
@@ -604,6 +644,23 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
   pagina = nav.pagina;
   // devolve null se chegou ao formulário, senão o resultado final
   const abrirVaga = async (lerAntes) => {
+    // Sites de empresas guardam o que foi lido do currículo numa tentativa anterior (com erros).
+    // Começa limpo: esses formulários não usam login.
+    if (!ehGupy) {
+      try {
+        const origem = new URL(vaga.url_candidatura || vaga.url).origin;
+        if (!/linkedin\.com|gupy\.io/.test(origem)) {
+          const cdp = await contexto.newCDPSession(pagina);
+          await cdp.send('Storage.clearDataForOrigin', { origin: origem, storageTypes: 'all' });
+          await cdp.detach();
+          // domínio principal (empresa.com, empresa.com.br) para levar junto os cookies do site
+          const partes = new URL(origem).hostname.split('.');
+          const n = partes.length > 2 && partes.at(-1).length === 2 && partes.at(-2).length <= 3 ? 3 : 2;
+          const dominio = partes.slice(-n).join('\\.');
+          await contexto.clearCookies({ domain: new RegExp(`(^|\\.)${dominio}$`) });
+        }
+      } catch { /* sem limpeza, segue igual */ }
+    }
     await pagina.goto(vaga.url_candidatura || vaga.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await esperarPagina(pagina);
     const desafio = await pagina.evaluate(temDesafio);
@@ -709,14 +766,25 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
       if (TESTE_ONLINE.test(titulos) && !dadosParaPreencher && !(await pagina.evaluate(acharBotao, botoes.proximo))) {
         return fim('pulada', `Parou em uma etapa de teste (${titulos.slice(0, 120)}). Testes são feitos por você.`);
       }
-      await registrar(`etapa-${etapa}-antes`, { url: pagina.url(), titulos, campos });
+      // sem os valores: o log não guarda o que estava digitado
+      await registrar(`etapa-${etapa}-antes`, { url: pagina.url(), titulos, campos: campos.map(({ valor, ...c }) => c) });
 
       const faltando = []; // preenche o resto e lista todas no fim
       const pendentes = []; // as que dá para responder pelo painel
       const separaNome = campos.some((c) => /sobrenome|last ?name|surname|family name/i.test(c.rotulo || ''));
       for (const campo of campos) {
-        if (campo.preenchido || !campo.rotulo) continue;
+        if (campo.preenchido || campo.autopreencher) continue;
+        if (!campo.rotulo) {
+          // campo sem nome não pode ser ignorado se for obrigatório: o envio ficaria incompleto
+          if (campo.obrigatorio) faltando.push(`"(campo sem nome, ${campo.tipo})"`);
+          continue;
+        }
         if (campo.tipo === 'combobox' && !campo.opcoes.length) campo.opcoes = await lerOpcoesLista(pagina, campo);
+        // busca com lista fixa (ex.: "Sim/Não"): lê as opções e trata como lista de escolha
+        if (campo.tipo === 'texto' && campo.lista && !campo.opcoes.length) {
+          const opcoes = await lerOpcoesLista(pagina, campo);
+          if (opcoes.length) Object.assign(campo, { tipo: 'combobox', opcoes });
+        }
         const decisao = await decidir(campo, { ...ctx, vaga, separaNome, aprendidas: memoria.respostas, textosTreino: memoria.textos || [], ...(iaFn ? { iaFn } : {}) });
         if (!decisao) {
           if (campo.tipo === 'arquivo' && CURRICULO.test(norm(campo.rotulo))) {
@@ -734,7 +802,15 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
           continue;
         }
         if (decisao.fonte === 'pessoal') tarjas.push(campo.id);
-        await preencher(pagina, campo, decisao.valor);
+        try {
+          await preencher(pagina, campo, decisao.valor);
+        } catch (e) {
+          // um campo travado não derruba a candidatura: segue e avisa no fim se era obrigatório
+          const erro = String(e.message || e).split('\n')[0].slice(0, 80);
+          if (campo.obrigatorio) faltando.push(`"${campo.rotulo.slice(0, 120)}" (não consegui preencher: ${erro})`);
+          respostas.push({ pergunta: campo.rotulo, resposta: `não preencheu (${erro})`, fonte: 'erro' });
+          continue;
+        }
         respostas.push({
           pergunta: campo.rotulo,
           resposta: decisao.fonte === 'pessoal' ? '(dado pessoal)' : campo.tipo === 'arquivo' ? path.basename(decisao.valor) : campo.tipo === 'checkbox' ? 'marcado' : decisao.valor,
@@ -744,6 +820,42 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
       const destaque = await destacarHabilidades(pagina, ctx, vaga);
       if (destaque?.escolhidas.length && !respostas.some((r) => r.pergunta === 'Habilidades destacadas')) {
         respostas.push({ pergunta: 'Habilidades destacadas', resposta: destaque.escolhidas.join(', '), fonte: destaque.fonte });
+      }
+      // Confere o resultado: campo obrigatório que ficou vazio ou em vermelho
+      // (o site recusou, o autocompletar apagou) ganha mais uma tentativa
+      await pausa(700, 1000);
+      const depois = await pagina.evaluate(lerCampos).catch(() => []);
+      for (const campo of depois) {
+        if (campo.preenchido || !campo.rotulo || !campo.obrigatorio || campo.autopreencher) continue;
+        const nome = `"${campo.rotulo.slice(0, 120)}"`;
+        if (faltando.some((f) => f.startsWith(nome))) continue;
+        if (campo.tipo === 'combobox' && !campo.opcoes.length) campo.opcoes = await lerOpcoesLista(pagina, campo);
+        if (campo.tipo === 'texto' && campo.lista && !campo.opcoes.length) {
+          const opcoes = await lerOpcoesLista(pagina, campo);
+          if (opcoes.length) Object.assign(campo, { tipo: 'combobox', opcoes });
+        }
+        const decisao = await decidir(campo, { ...ctx, vaga, separaNome, aprendidas: memoria.respostas, textosTreino: memoria.textos || [], ...(iaFn ? { iaFn } : {}) }).catch(() => null);
+        let ok = false;
+        if (decisao) {
+          await preencher(pagina, campo, decisao.valor).catch(() => {});
+          // sai do campo: é aí que muitos sites validam e apagam o que não aceitaram
+          await pagina.locator(`[data-rota="${campo.id}"]`).evaluate((e) => e.blur()).catch(() => {});
+          await pausa(900, 1200);
+          ok = await pagina.locator(`[data-rota="${campo.id}"]`).evaluate((e) => (e.type === 'checkbox' ? e.checked
+            : e.type === 'file' ? e.files.length > 0 : !!String(e.value ?? e.innerText ?? '').trim())).catch(() => false);
+        }
+        if (ok) {
+          if (!respostas.some((r) => r.pergunta === campo.rotulo)) {
+            respostas.push({ pergunta: campo.rotulo, resposta: decisao.fonte === 'pessoal' ? '(dado pessoal)' : decisao.valor, fonte: decisao.fonte });
+          }
+          continue;
+        }
+        faltando.push(`${nome}${decisao ? ` (o site não aceitou "${String(decisao.valor).slice(0, 40)}")` : ''}`);
+        // sem resposta: vai para a caixa Perguntas do painel; a sua resposta fica salva para as próximas vagas
+        if (!decisao && !detectarPessoal(campo.rotulo) && campo.tipo !== 'arquivo' && !/senha|password/i.test(campo.rotulo)
+          && !pendentes.some((x) => x.pergunta === campo.rotulo)) {
+          pendentes.push({ pergunta: campo.rotulo.slice(0, 1000), tipo: campo.tipo, opcoes: campo.opcoes || [] });
+        }
       }
       await registrar(`etapa-${etapa}-preenchida`);
       const telaId = JSON.stringify([pagina.url(), titulos, campos.map((c) => c.rotulo)]);
@@ -792,7 +904,9 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
       if (assinatura === assinaturaAnterior) {
         const aviso = await pagina.evaluate(() => [...document.querySelectorAll('[role=alert], [class*=error i], [class*=erro i], [aria-invalid=true]')]
           .map((e) => (e.innerText || e.getAttribute('aria-label') || '').trim()).filter(Boolean).slice(0, 3).join(' | ')).catch(() => '');
-        return fim('erro', `Cliquei para avançar mas a tela não mudou${aviso ? ` (a página diz: ${aviso.slice(0, 200)})` : ''}. Veja os prints.`);
+        const vazios = (await pagina.evaluate(lerCampos).catch(() => []))
+          .filter((c) => c.obrigatorio && !c.preenchido && c.rotulo && !c.autopreencher).map((c) => `"${c.rotulo.slice(0, 60)}"`);
+        return fim('erro', `Cliquei para avançar mas a tela não mudou${vazios.length ? `; campos obrigatórios vazios: ${vazios.slice(0, 4).join(', ')}` : ''}${aviso ? ` (a página diz: ${aviso.slice(0, 200)})` : ''}. Veja os prints.`);
       }
       assinaturaAnterior = assinatura;
 
@@ -845,6 +959,9 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
   } catch (e) {
     return fim('erro', e.message.split('\n')[0].slice(0, 300), 'excecao');
   } finally {
+    if (aoTravar && ['erro', 'pulada'].includes(ultimo?.resultado)) {
+      ultimo.observado = await aoTravar({ contexto: nav.contexto, pagina, resultado: ultimo }).catch(() => null);
+    }
     await pausa(1500, 3000);
     await nav.fechar().catch(() => {});
   }

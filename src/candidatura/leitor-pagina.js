@@ -54,14 +54,74 @@ function lerCampos() {
       const primeiro = linhasDe(p)[0];
       if (primeiro && primeiro.length < 300) return primeiro;
     }
-    const host = el.getRootNode && el.getRootNode().host;
-    const doHost = host && (host.getAttribute('label') || host.getAttribute('aria-label') || host.getAttribute('placeholder'));
-    if (doHost) return limpar(doHost);
+    // Componentes (shadow DOM): o rótulo fica num elemento de fora, às vezes várias camadas acima
+    let n = el.parentElement || (el.getRootNode && el.getRootNode().host);
+    for (let i = 0; i < 8 && n; i++, n = n.parentElement || (n.getRootNode && n.getRootNode().host)) {
+      const attr = n.getAttribute && (n.getAttribute('label') || n.getAttribute('aria-label'));
+      if (attr && !/^(search|pesquis)/i.test(attr)) return limpar(attr);
+      const ref = n.getAttribute && n.getAttribute('aria-labelledby');
+      if (ref) {
+        const t = ref.split(/\s+/).map((id) => textoDe(todos(`[id="${CSS.escape(id)}"]`)[0])).join(' ').trim();
+        if (t) return limpar(t);
+      }
+    }
+    const acima = textoAcima(el);
+    if (acima) return acima;
     return limpar(el.getAttribute('placeholder') || el.name || '');
   }
 
+  // Último recurso: o texto que aparece logo acima do campo na tela
+  let textosTela = null;
+  function textoAcima(el) {
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return '';
+    if (!textosTela) {
+      textosTela = [];
+      const visitar = (no) => {
+        if (no.nodeType === 3) {
+          const t = no.textContent.replace(/\s+/g, ' ').trim();
+          if (t.length < 2) return;
+          const range = document.createRange();
+          range.selectNodeContents(no);
+          const b = range.getBoundingClientRect();
+          if (b.width && b.height) textosTela.push({ t, b });
+          return;
+        }
+        if (no.nodeType !== 1 && no.nodeType !== 11) return;
+        if (no.nodeType === 1 && /^(SCRIPT|STYLE|NOSCRIPT|OPTION)$/.test(no.tagName)) return;
+        if (no.shadowRoot) visitar(no.shadowRoot);
+        for (const f of no.childNodes) visitar(f);
+      };
+      visitar(document.body);
+    }
+    // mais próximo acima, na mesma coluna, até ~70px de distância; ignora contadores ("0 / 200")
+    const candidatos = textosTela.filter(({ t, b }) => b.bottom <= r.top + 4 && r.top - b.bottom < 70
+      && b.left < r.right && b.right > r.left - 20 && !ehContador(t) && !/^[\d\s/]+$/.test(t));
+    candidatos.sort((a, b) => b.b.bottom - a.b.bottom || a.b.left - b.b.left);
+    if (!candidatos.length) return '';
+    // junta os pedaços da mesma linha (ex.: "Você possui alguma deficiência?" + "*")
+    const linha = candidatos.filter((c) => Math.abs(c.b.bottom - candidatos[0].b.bottom) < 6).sort((a, b) => a.b.left - b.b.left);
+    return limpar(linha.map((c) => c.t).join(' ')).slice(0, 300);
+  }
+
+  // O rótulo chega aqui já sem o "*"; então olha o texto cru perto do campo
+  const AVISO_OBRIGATORIO = /obrigat[oó]ri|is required|required field|this field is required|campo necess[aá]rio|preencha este campo|please (fill|provide|enter|select)|por favor,? (preencha|informe|forne[cç]a|selecione)/i;
+  function marcadoComoObrigatorio(el) {
+    const raiz = el.getRootNode && el.getRootNode().querySelector ? el.getRootNode() : document;
+    const label = (el.id && raiz.querySelector(`label[for="${CSS.escape(el.id)}"]`)) || el.closest('label');
+    if (label && /\*/.test(label.textContent || '')) return true;
+    let p = el.parentElement || (el.getRootNode && el.getRootNode().host);
+    for (let i = 0; i < 4 && p; i++, p = p.parentElement || (p.getRootNode && p.getRootNode().host)) {
+      // só enquanto o contêiner é deste campo
+      if (camposDentro(p) > 1) break;
+      const texto = textoProfundo(p, 300);
+      if (/\*/.test(texto.split(/\n/)[0]) || AVISO_OBRIGATORIO.test(texto)) return true;
+    }
+    return false;
+  }
   const obrigatorio = (el, texto) =>
-    el.required || el.getAttribute('aria-required') === 'true' || /\*\s*$/.test(texto || '')
+    el.required || el.getAttribute('aria-required') === 'true' || el.getAttribute('aria-invalid') === 'true'
+    || /\*\s*$/.test(texto || '') || marcadoComoObrigatorio(el)
     // Listas customizadas guardam o required num input escondido
     || (el.tagName !== 'INPUT' && !!el.parentElement?.querySelector('input[required], input[aria-required=true]'));
 
@@ -97,6 +157,7 @@ function lerCampos() {
     campos.push({
       id: opcoes[0].id, tipo: 'radio', rotulo: pergunta, opcoes: opcoes.map((o) => o.texto), idsOpcoes: opcoes.map((o) => o.id),
       obrigatorio: radios.some((r) => r.required) || /\*/.test(pergunta), preenchido: radios.some((r) => r.checked),
+      valor: opcoes[radios.findIndex((r) => r.checked)]?.texto ?? null,
     });
   }
 
@@ -112,8 +173,41 @@ function lerCampos() {
       id: opcoes[0].id, tipo: 'radio', rotulo: pergunta, opcoes: opcoes.map((o) => o.texto), idsOpcoes: opcoes.map((o) => o.id),
       obrigatorio: g.getAttribute('aria-required') === 'true' || /\*/.test(pergunta),
       preenchido: radios.some((r) => r.getAttribute('aria-checked') === 'true'),
+      valor: opcoes[radios.findIndex((r) => r.getAttribute('aria-checked') === 'true')]?.texto ?? null,
     });
   });
+
+  // Upload que só serve para o site preencher o formulário sozinho a partir do currículo
+  const AUTOPREENCHER = /preencher automaticamente|preenche automaticamente|f[aá]cil de aplicar|autofill|auto-fill|fill (out |in )?(your )?(application|profile|form) automatically|easy apply|apply with (indeed|linkedin|seek)|candidate-se (com|pelo)|import (your )?(resume|cv|profile)|importar (seu )?(curr[ií]culo|perfil)/i;
+  // Quantos campos há dentro de um elemento, contando o shadow root dele mesmo
+  function camposDentro(p) {
+    const sel = 'input:not([type=hidden]), textarea, select';
+    return todos(sel, p).length + (p.shadowRoot ? todos(sel, p.shadowRoot).length : 0);
+  }
+  // Sobe pelos pais atravessando o shadow DOM (SmartRecruiters usa componentes)
+  const paiDe = (n) => n.parentElement || (n.getRootNode && n.getRootNode().host) || null;
+  // Texto do elemento incluindo o que está dentro de shadow roots
+  function textoProfundo(n, limite = 600) {
+    let out = '';
+    const visitar = (no) => {
+      if (out.length > limite) return;
+      if (no.nodeType === 3) { out += no.textContent + ' '; return; }
+      if (no.nodeType !== 1 && no.nodeType !== 11) return;
+      if (no.shadowRoot) visitar(no.shadowRoot);
+      for (const f of no.childNodes) visitar(f);
+    };
+    visitar(n);
+    return out.replace(/\s+/g, ' ');
+  }
+  function ehAutopreencher(el) {
+    let p = paiDe(el);
+    for (let i = 0; i < 8 && p; i++, p = paiDe(p)) {
+      // chegou numa parte com outros campos: daqui para cima já é o formulário
+      if (camposDentro(p) > 1) return false;
+      if (AUTOPREENCHER.test(textoProfundo(p))) return true;
+    }
+    return false;
+  }
 
   // Caixinha customizada: o input real fica escondido e o que aparece é o label ou um quadrado ao lado
   function caixaVisivel(c) {
@@ -164,6 +258,7 @@ function lerCampos() {
       id: opcoes[0].id, tipo: 'caixinhas', rotulo: pergunta, opcoes: opcoes.map((o) => o.texto), idsOpcoes: opcoes.map((o) => o.id),
       obrigatorio: grupo.some((g) => g.required || g.getAttribute('aria-required') === 'true') || /\*/.test(pergunta),
       preenchido: grupo.some((g) => g.checked || g.getAttribute('aria-checked') === 'true'),
+      valor: opcoes.filter((o, i) => grupo[i].checked || grupo[i].getAttribute('aria-checked') === 'true').map((o) => o.texto).join(', ') || null,
     });
   }
 
@@ -193,14 +288,29 @@ function lerCampos() {
 
     campos.push({
       id: marcar(el), tipo, rotulo: r, opcoes, obrigatorio: obrigatorio(el, r), preenchido,
+      // valor atual (usado pelo observador que aprende com você); arquivo e senha nunca
+      valor: tipoInput === 'file' || tipoInput === 'password' ? null
+        : tipo === 'checkbox' ? el.checked
+          : tipo === 'select' ? limpar(el.options[el.selectedIndex]?.textContent)
+            : tipo === 'combobox' ? textoDe(el) : String(el.value || '').slice(0, 3000),
       ...limiteDe(el),
       html: tipoInput || null, // ajuda quando o rótulo é estranho (ex.: "BR+55")
       // Autocompletar: depois de digitar é preciso clicar numa sugestão
       autocompletar: el.tagName === 'INPUT' && tipoInput !== 'file' && (!!el.getAttribute('list') || el.getAttribute('role') === 'combobox'
         || ['list', 'both'].includes(el.getAttribute('aria-autocomplete')) || /autocomplete|typeahead|location|places/i.test(`${el.className} ${el.id} ${el.name}`)),
       aceita: tipoInput === 'file' ? (el.getAttribute('accept') || '') : undefined,
+      autopreencher: tipoInput === 'file' ? ehAutopreencher(el) : undefined,
+      // input que abre uma lista (busca + escolha): as opções só aparecem clicando
+      lista: el.tagName === 'INPUT' && el.getAttribute('aria-haspopup') === 'listbox',
     });
   });
+
+  // Dois uploads iguais de documento (ex.: "Choose a file" no topo e no fim): o primeiro costuma ser
+  // o "preencher com o currículo"; o do currículo de verdade é o último.
+  const docs = campos.filter((c) => c.tipo === 'arquivo' && !c.autopreencher && /pdf|doc/i.test(c.aceita || ''));
+  for (const c of docs.slice(0, -1)) {
+    if (docs.some((o) => o !== c && o.rotulo === c.rotulo)) c.autopreencher = true;
+  }
 
   return campos;
 }
@@ -208,12 +318,20 @@ function lerCampos() {
 // Marca o botão encontrado com data-rota-botao
 function acharBotao(fonteRegex) {
   const todos = (sel, raiz = document) => { const out = [...raiz.querySelectorAll(sel)]; for (const e of raiz.querySelectorAll('*')) if (e.shadowRoot) out.push(...todos(sel, e.shadowRoot)); return out; };
+  const textoDoBotao = (e) => {
+    let t = (e.innerText || e.value || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    // botão de componente: o texto fica no <slot> ou no elemento de fora
+    if (!t && e.querySelectorAll) t = [...e.querySelectorAll('slot')].flatMap((s) => s.assignedNodes({ flatten: true })).map((n) => n.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+    const host = !t && e.getRootNode && e.getRootNode().host;
+    if (host) t = (host.innerText || host.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    return t;
+  };
   const re = new RegExp(fonteRegex, 'i');
   const candidatos = todos('button, a, [role=button], input[type=submit]');
   for (const el of candidatos) {
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
-    const texto = (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    const texto = textoDoBotao(el);
     if (texto && texto.length <= 40 && re.test(texto)) {
       el.setAttribute('data-rota-botao', '1');
       return texto;
@@ -240,10 +358,18 @@ function temDesafio() {
 // Botão desativado costuma indicar campo obrigatório faltando
 function botaoDesativado(fonteRegex) {
   const todos = (sel, raiz = document) => { const out = [...raiz.querySelectorAll(sel)]; for (const e of raiz.querySelectorAll('*')) if (e.shadowRoot) out.push(...todos(sel, e.shadowRoot)); return out; };
+  const textoDoBotao = (e) => {
+    let t = (e.innerText || e.value || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    // botão de componente: o texto fica no <slot> ou no elemento de fora
+    if (!t && e.querySelectorAll) t = [...e.querySelectorAll('slot')].flatMap((s) => s.assignedNodes({ flatten: true })).map((n) => n.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+    const host = !t && e.getRootNode && e.getRootNode().host;
+    if (host) t = (host.innerText || host.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
+    return t;
+  };
   const re = new RegExp(fonteRegex, 'i');
   for (const el of todos('button, a, [role=button], input[type=submit]')) {
     const r = el.getBoundingClientRect();
-    const texto = (el.innerText || el.value || '').replace(/\s+/g, ' ').trim();
+    const texto = textoDoBotao(el);
     const desativado = el.disabled || el.getAttribute('aria-disabled') === 'true';
     if (r.width && r.height && desativado && texto.length <= 40 && re.test(texto)) return texto;
   }

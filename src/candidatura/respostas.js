@@ -3,7 +3,8 @@
 
 const fs = require('fs');
 const ia = require('../ia/gemini');
-const { chave: chaveAprendida, chavePergunta } = require('./aprendizado');
+const aprendizado = require('./aprendizado');
+const { chave: chaveAprendida, chavePergunta } = aprendizado;
 
 const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
@@ -53,7 +54,7 @@ const REGRAS_FIXAS = [
 // "Semestre previsto para a conclusão" é previsão, não semestre atual
   [/formatura|conclusao|previsao de termino|previstos? para (a )?(conclusao|formatura)/, 'previsao_formatura'],
   [/semestre|periodo (atual|do curso|que (esta|cursa))/, 'semestre_atual'],
-  [/como (voce )?(soube|conheceu|ficou sabendo)|onde (voce )?(encontrou|viu|conheceu)/, 'como_soube'],
+  [/como (voce )?(soube|conheceu|ficou sabendo|encontrou|achou|descobriu)|onde (voce )?(encontrou|viu|conheceu|achou)|how did you (hear|find|learn)|where did you (hear|find|see)|fonte (da|de) (vaga|candidatura)/, 'como_soube'],
   [/(ja )?conhec(e|ia|eu) (a |o |nossa |nosso )?(empresa|marca|companhia|grupo)|voce (ja )?conhecia|ja conhece (a|o) /, 'conhece_empresa'],
   [/indicad[oa]|(foi|e) (uma )?indicacao|alguem (te |lhe )?indicou|possui indicacao/, 'indicacao'],
   [/quando (voce )?pode (comecar|iniciar)|inicio imediato|data (de|para) inicio|disponibilidade para (comecar|inicio)/, 'inicio'],
@@ -78,11 +79,31 @@ const DIVERSIDADE = /(^|[^a-z])(genero|sexo|gender|raca|cor|etnia|pcd)([^a-z]|$)
 const PREFIRO_NAO = /prefiro nao|nao desejo|nao quero (informar|responder)|prefiro nao informar|prefer not|decline to|nao informar/;
 const CURRICULO = /curriculo|\bcv\b|resume|anexo/;
 
+// Mesma resposta escrita de jeitos diferentes em cada site
+const SINONIMOS = [
+  ['masculino', 'homem', 'male', 'man', 'homem cis', 'homem cisgenero'],
+  ['feminino', 'mulher', 'female', 'woman', 'mulher cis', 'mulher cisgenero'],
+  ['sim', 'yes', 'possuo', 'tenho', 'si'],
+  ['nao', 'no', 'nao possuo', 'nao tenho', 'nenhum', 'nenhuma', 'none'],
+  ['prefiro nao responder', 'prefiro nao informar', 'prefiro nao dizer', 'nao desejo informar', 'nao desejo responder', 'nao quero informar', 'nao quero responder', 'prefer not to say', 'prefer not to answer', 'i prefer not to answer', 'decline to answer', 'decline to self identify'],
+  ['basico', 'basic', 'iniciante', 'beginner', 'elementar', 'elementary'],
+  ['intermediario', 'intermediate', 'medio'],
+  ['avancado', 'advanced'],
+  ['fluente', 'fluent', 'nativo', 'native', 'proficiente'],
+  ['linkedin', 'linked in'],
+];
+const grupoDe = (t) => SINONIMOS.find((g) => g.includes(t));
+
 function escolherOpcao(opcoes, resposta) {
   const r = norm(resposta);
   if (!r) return null;
   const exata = opcoes.find((o) => norm(o) === r);
   if (exata) return exata;
+  const grupo = grupoDe(r);
+  if (grupo) {
+    const sinonimo = opcoes.find((o) => grupo.includes(norm(o).replace(/[.!]+$/, '')));
+    if (sinonimo) return sinonimo;
+  }
   const contem = opcoes.find((o) => norm(o) && (r.includes(norm(o)) || norm(o).includes(r)));
   if (contem) return contem;
   const palavras = new Set(r.split(/\W+/).filter((p) => p.length > 2));
@@ -111,7 +132,38 @@ function cortarNoLimite(texto, limite, limitePalavras) {
 
 const ehEscolha = (c) => ['select', 'radio', 'combobox', 'caixinhas'].includes(c.tipo);
 
-async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga, pessoais = {}, aprendidas = {}, textosTreino = [], respondidas = [], separaNome = false, iaFn = ia.responder }) {
+// Reaproveita uma resposta que você já deu para a mesma pergunta escrita de outro jeito.
+// O resultado da comparação fica guardado: a IA só é consultada uma vez por pergunta.
+async function respostaEquivalente(campo, { aprendidas = {}, respondidas = [], respostasFixas = [], equivFn = ia.mesmaPergunta }) {
+  const k = chavePergunta(campo.rotulo);
+  const conhecidas = [
+    ...(respondidas || []).filter((r) => r.resposta).map((r) => ({ pergunta: r.pergunta, resposta: String(r.resposta) })),
+    ...Object.values(aprendidas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) })),
+    ...(respostasFixas || []).filter((r) => r.resposta).map((r) => ({ pergunta: r.rotulo, resposta: String(r.resposta) })),
+  ].filter((c) => c.pergunta && chavePergunta(c.pergunta) !== k).slice(0, 80);
+  if (!conhecidas.length) return null;
+  const memoria = aprendizado.carregar();
+  const cache = memoria.equivalencias || {};
+  let alvo;
+  if (k in cache) {
+    alvo = cache[k] ? conhecidas.find((c) => chavePergunta(c.pergunta) === cache[k]) : null;
+  } else {
+    const i = await equivFn({ pergunta: campo.rotulo, opcoes: campo.opcoes || [], conhecidas: conhecidas.map((c) => c.pergunta) }).catch(() => null);
+    if (i == null) return null; // IA fora do ar: tenta de novo na próxima vez
+    alvo = i >= 0 ? conhecidas[i] : null;
+    memoria.equivalencias = { ...cache, [k]: alvo ? chavePergunta(alvo.pergunta) : '' };
+    aprendizado.salvar(memoria);
+  }
+  if (!alvo) return null;
+  if (ehEscolha(campo)) {
+    const opcao = escolherOpcao(campo.opcoes || [], alvo.resposta);
+    return opcao ? { valor: opcao, fonte: 'equivalente' } : null;
+  }
+  if (['texto', 'textarea'].includes(campo.tipo)) return { valor: alvo.resposta, fonte: 'equivalente' };
+  return null;
+}
+
+async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga, pessoais = {}, aprendidas = {}, textosTreino = [], respondidas = [], separaNome = false, iaFn = ia.responder, equivFn = ia.mesmaPergunta }) {
   const partes = String(perfilBase?.nome || '').trim().split(/\s+/);
   const perfil = { ...perfilBase, primeiro_nome: partes[0] || '', sobrenome: partes.slice(1).join(' ') };
   if (separaNome) perfil.nome = perfil.primeiro_nome; // ao lado de "Sobrenome", só o primeiro nome
@@ -119,6 +171,12 @@ async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga
   // Respostas já dadas vão para a IA reconhecer a mesma pergunta escrita de outro jeito
   const objetivasTreino = Object.values(aprendidas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) }));
   const contexto = { perfil, listas, respostasFixas, textosTreino, respondidas: [...respondidas, ...objetivasTreino] };
+
+  // Código do país do telefone (lista separada do número)
+  if (['select', 'combobox'].includes(campo.tipo) && /country code|codigo do pais|codigo de pais|prefixo|\bddi\b|dial code|phone code/.test(rotulo)) {
+    const opcao = (campo.opcoes || []).find((o) => /\+\s?55\b/.test(o)) || (campo.opcoes || []).find((o) => /brasil|brazil/i.test(o));
+    return opcao ? { valor: opcao, fonte: 'regra' } : null;
+  }
 
   // Pelo tipo do input: type="tel" é telefone mesmo com rótulo como "BR+55"
   if (campo.tipo === 'texto' && campo.html === 'tel' && !/cep|cpf/.test(rotulo)) {
@@ -152,8 +210,10 @@ async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga
     return CONSENTIMENTO.test(rotulo) ? { valor: true, fonte: 'regra' } : null;
   }
 
-  // Diversidade: só o que o usuário informou, nunca deduz
-  if (curta && DIVERSIDADE.test(rotulo)) {
+  // Diversidade: só o que o usuário informou, nunca deduz.
+  // Também pelas opções: "Você se considera uma pessoa:" + "Branca / Preta / Parda…" é raça/cor.
+  const opcoesDiversidade = /\b(branca|preta|parda|indigena|amarela|heterossexual|homossexual|bissexual|cisgener|transgener|nao binari|pessoa com deficiencia)\b/.test(norm((campo.opcoes || []).join(' ')));
+  if (curta && (DIVERSIDADE.test(rotulo) || opcoesDiversidade)) {
     const sua = (/genero|sexo|gender/.test(rotulo) && respostasFixas.find((r) => r.chave === 'genero')?.resposta)
       || respondidas.find((r) => r.resposta && chavePergunta(r.pergunta) === chavePergunta(campo.rotulo))?.resposta
       || aprendidas[chaveAprendida(campo.rotulo)]?.valor;
@@ -162,6 +222,9 @@ async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga
       const opcao = escolherOpcao(campo.opcoes || [], String(sua));
       if (opcao) return { valor: opcao, fonte: 'fixa' };
     }
+    // a mesma pergunta já respondida por você com outras palavras
+    const eq = await respostaEquivalente(campo, { aprendidas, respondidas, respostasFixas, equivFn });
+    if (eq) return eq;
     const opcao = (campo.opcoes || []).find((o) => PREFIRO_NAO.test(norm(o)));
     return opcao ? { valor: opcao, fonte: 'regra' } : null;
   }
@@ -172,9 +235,14 @@ async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga
     if (opcao) return { valor: opcao, fonte: 'regra' };
   }
 
-  // Arquivo que só aceita imagem é foto
-  const soImagem = campo.tipo === 'arquivo' && /image/.test(campo.aceita || '') && !/pdf|doc/.test(campo.aceita || '');
-  if (campo.tipo === 'arquivo' && (soImagem || /foto|photo|imagem|picture|avatar|retrato/.test(rotulo))) {
+  // Área de "preencher automaticamente com o currículo": o site lê o PDF do jeito dele e erra
+  // (cargos, cursos, datas). O currículo vai só no campo próprio dele.
+  if (campo.tipo === 'arquivo' && campo.autopreencher) return null;
+
+  // Arquivo que só aceita imagem é foto ("image/*" ou só extensões de imagem)
+  const aceita = String(campo.aceita || '').toLowerCase();
+  const soImagem = campo.tipo === 'arquivo' && /image|\.(jpe?g|png|gif|webp|bmp)/.test(aceita) && !/pdf|doc/.test(aceita);
+  if (campo.tipo === 'arquivo' && (soImagem || /foto|photo|imagem|image|picture|avatar|retrato/.test(rotulo))) {
     const foto = String(perfil.foto_arquivo || '').trim().replace(/^["']|["']$/g, '');
     return foto && fs.existsSync(foto) ? { valor: foto, fonte: 'arquivo' } : null;
   }
@@ -238,6 +306,12 @@ async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga
     }
   }
 
+  // Antes de a IA criar uma resposta: você já respondeu isso com outras palavras?
+  if (ehEscolha(campo) || (campo.tipo === 'texto' && rotulo.length < 200)) {
+    const eq = await respostaEquivalente(campo, { aprendidas, respondidas, respostasFixas, equivFn });
+    if (eq) return eq;
+  }
+
   if (ehEscolha(campo)) {
     if (!campo.opcoes?.length) return null;
     const escolhida = await iaFn({ pergunta: campo.rotulo, opcoes: campo.opcoes, contexto, vaga });
@@ -246,7 +320,7 @@ async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga
   }
   // Texto curto obrigatório também vai para a IA, que só responde se souber
   if (campo.tipo === 'textarea' || (campo.tipo === 'texto' && (rotulo.length >= 25 || campo.obrigatorio))) {
-    const apresentacao = /saber mais sobre voce|apresente-se|apresentacao pessoal|fale (um pouco )?(mais )?sobre voce|conte (um pouco )?(mais )?sobre voce|quem e voce/.test(rotulo);
+    const apresentacao = /saber mais sobre voce|apresente-se|apresentacao pessoal|fale (um pouco )?(mais )?sobre voce|conte (um pouco )?(mais )?sobre voce|quem e voce|carta de apresentacao|cover letter|interesse em trabalhar|por que (voce )?(quer|deseja|gostaria)|mensagem para a equipe|message to the hiring|interest (in )?working|why do you want|tell us about yourself/.test(rotulo);
     const dica = apresentacao
       ? 'É a apresentação pessoal do candidato para esta vaga. Escreva de 4 a 6 frases, em primeira pessoa, com base na trajetória e nos textos dele: quem é, o que estuda, o que já fez de concreto (projetos, trabalhos) e por que combina com ESTA vaga. Sem inventar nada.'
       : undefined;

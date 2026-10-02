@@ -13,7 +13,7 @@ try {
   }
   const agora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const mensagem = process.argv.slice(2).join(' ').trim() || `Atualização ${agora}`;
-  git('add', '-A');
+  git('-c', 'core.safecrlf=false', 'add', '-A');
   git('commit', '-q', '-m', mensagem);
   git('push', '-q');
   console.log(`\n  Salvo no GitHub: "${mensagem}"\n`);
