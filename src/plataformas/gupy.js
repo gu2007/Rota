@@ -26,7 +26,8 @@ const JA_CANDIDATADO = /voc[eê] j[aá] se candidatou|you have already applied|v
 const SUCESSO = /candidatura (enviada|realizada|conclu[ií]da|finalizada|recebida)|parab[eé]ns|inscri[cç][aã]o (realizada|conclu[ií]da|enviada)|recebemos (a )?sua candidatura|obrigad[oa] (por se candidatar|pela (sua )?candidatura)|thank(s| you) for (your )?appl|application (submitted|received|sent)|we.?ve received your application/i;
 const CURRICULO_INCOMPLETO = /precisa preencher (o )?seu curr[ií]culo|complete (o )?seu curr[ií]culo|preencher curr[ií]culo/i;
 // avisos por cima da página (cookies, notificações): fecha recusando
-const BASE_FECHAR = 'n[aã]o,? obrigad[oa]|rejeitar todos|agora n[aã]o|dispensar|fechar aviso|entendi|ok, entendi';
+// cookies: sempre a opção que recusa o que não é essencial
+const BASE_FECHAR = 'n[aã]o,? obrigad[oa]|rejeitar( todos| tudo| cookies)?|recusar( todos| cookies)?|reject( all| cookies)?|decline( all)?|aceitar (apenas|somente) (os )?(necess[aá]rios|essenciais)|agora n[aã]o|dispensar|fechar aviso|entendi|ok, entendi';
 const TESTE_ONLINE = /teste (de |do )?(perfil|comportamental|l[oó]gic|ingl[eê]s|online|t[eé]cnico|conhecimento)|game|jogo de|avalia[cç][aã]o (online|comportamental)/i;
 
 async function textoTitulos(pagina) {

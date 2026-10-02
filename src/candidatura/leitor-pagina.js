@@ -265,7 +265,12 @@ function lerCampos() {
   // aria-haspopup=listbox: listas que abrem ao clicar (ex.: Gupy)
   const seletor = 'input:not([type=radio]):not([type=hidden]):not([type=submit]):not([type=button]), textarea, select, [role=combobox], [aria-haspopup=listbox]:not(button):not(a)';
   todos(seletor).forEach((el) => {
-    if (usados.has(el) || el.disabled || el.readOnly) return;
+    if (usados.has(el) || el.disabled) return;
+    // somente-leitura só entra se for uma lista disfarçada (clica e abre opções)
+    const listaSoLeitura = el.readOnly && el.tagName === 'INPUT' && (/select|dropdown|combo|picker/i.test(`${el.className} ${el.id}`)
+      || el.getAttribute('aria-haspopup') || el.getAttribute('role') === 'combobox'
+      || !!(el.parentElement && el.parentElement.querySelector('[class*=chevron], [class*=arrow], [class*=caret], [name*=chevron]')));
+    if (el.readOnly && !listaSoLeitura) return;
     const tipoInput = (el.getAttribute('type') || '').toLowerCase();
     // Input de arquivo costuma ficar escondido atrás de um botão
     if (tipoInput === 'checkbox' ? !caixaVisivel(el) : (tipoInput !== 'file' && !visivel(el))) return;
@@ -301,7 +306,7 @@ function lerCampos() {
       aceita: tipoInput === 'file' ? (el.getAttribute('accept') || '') : undefined,
       autopreencher: tipoInput === 'file' ? ehAutopreencher(el) : undefined,
       // input que abre uma lista (busca + escolha): as opções só aparecem clicando
-      lista: el.tagName === 'INPUT' && el.getAttribute('aria-haspopup') === 'listbox',
+      lista: el.tagName === 'INPUT' && (el.getAttribute('aria-haspopup') === 'listbox' || listaSoLeitura),
     });
   });
 

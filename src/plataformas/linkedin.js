@@ -1,13 +1,14 @@
-// Abre as vagas do LinkedIn (vindas dos alertas) só para descobrir onde é a candidatura.
-// Não pesquisa nem usa a Candidatura simplificada: o LinkedIn proíbe automação e pode restringir a conta.
+// LinkedIn: busca vagas pela página pública (sem login) e abre cada uma para descobrir onde é a candidatura.
+// Não usa a Candidatura simplificada: o LinkedIn proíbe automação e pode restringir a conta.
 
 const { abrirNavegador, pausa, lerPagina } = require('../navegador/navegador');
 const { normalizarUrl, detectarPlataformaEnvio } = require('../util/url');
 const { pontuar } = require('../ia/pontuador');
+const busca = require('../coleta/linkedin-busca');
 const fs = require('fs');
 const path = require('path');
 
-const POR_VEZ = 2;
+const POR_VEZ = 5; // vagas abertas por rodada da agenda (o teste manual abre mais)
 
 // roda no contexto da página
 function lerVagaLinkedin() {
@@ -192,15 +193,28 @@ async function resolverVaga(vaga, { pagina, contexto, config, repo }) {
   };
 }
 
-async function coletar(ctx, { abrir = abrirNavegador } = {}) {
+// Busca pública com os termos de Ajustes. Devolve as vagas achadas (quem grava é o executor/script)
+async function buscarVagas(ctx, { paginas = 2 } = {}) {
+  const termos = ctx.config?.termosBusca || [];
+  if (!termos.length) return [];
+  const local = String(ctx.config?.localizacao || 'São Paulo').split(/[;,]/)[0].trim() || 'São Paulo';
+  const achadas = await busca.buscar({ termos, local, paginas, log: ctx.log });
+  busca.anotarBusca(achadas.length);
+  await ctx.log('info', 'linkedin', `Busca no LinkedIn: ${achadas.length} vagas para ${termos.length} termos em ${local}.`);
+  return achadas;
+}
+
+async function coletar(ctx, { abrir = abrirNavegador, porVez = POR_VEZ } = {}) {
   const { repo } = ctx;
   if (!repo) return [];
+  // pela agenda: busca vagas novas no máximo a cada 6 horas; o executor grava e pontua
+  const novas = ctx.buscar !== false && busca.podeBuscar() ? await buscarVagas(ctx).catch(() => []) : [];
   const pendentes = (await repo.vagas.listar({ status: 'na_fila', limite: 500 }))
     .filter((v) => v.plataforma_envio === 'linkedin')
-    .slice(0, POR_VEZ);
+    .slice(0, porVez);
   if (!pendentes.length) {
     await ctx.log('info', 'linkedin', 'Nenhuma vaga do LinkedIn esperando para descobrir o link de candidatura.');
-    return [];
+    return novas;
   }
   const nav = await abrir();
   try {
@@ -219,7 +233,7 @@ async function coletar(ctx, { abrir = abrirNavegador } = {}) {
   } finally {
     await nav.fechar().catch(() => {});
   }
-  return []; // as vagas já estão no banco, aqui só são atualizadas
+  return novas; // as abertas já foram atualizadas no banco; as novas o executor grava
 }
 
-module.exports = { tipo: 'coleta', coletar, resolverVaga, lerVagaLinkedin, desembrulhar, POR_VEZ };
+module.exports = { tipo: 'coleta', coletar, buscarVagas, resolverVaga, lerVagaLinkedin, desembrulhar, POR_VEZ };

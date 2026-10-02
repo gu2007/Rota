@@ -102,7 +102,7 @@ function criarExecutor(repo, { intervaloMs = 30 * 1000, modulos = modulosPadrao 
     for (const bruta of encontradas) {
       const r = await registrarVaga(repo, bruta, {
         origem_plataforma: plataforma.codigo,
-        origem_coleta: { email: 'email', gupy_portal: 'busca' }[plataforma.codigo] || 'site',
+        origem_coleta: { email: 'email', gupy_portal: 'busca', linkedin: 'busca' }[plataforma.codigo] || 'site',
       });
       if (r.nova) novas++;
       if (r.nova && r.aprovada) naFila++;

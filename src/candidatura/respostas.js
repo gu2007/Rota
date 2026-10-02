@@ -96,6 +96,8 @@ const SINONIMOS = [
   ['ensino medio', 'medio', 'high school', 'secondary'],
   ['pos graduacao', 'especializacao', 'mba', 'postgraduate', 'post graduate'],
   ['mestrado', 'master', 'masters', 'masters degree', 'master s degree'],
+  ['em andamento', 'cursando', 'in progress', 'ongoing', 'andamento'],
+  ['completo', 'concluido', 'completed', 'graduado', 'formado'],
 ];
 const grupoDe = (t) => SINONIMOS.find((g) => g.includes(t.replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()));
 
@@ -169,7 +171,26 @@ async function respostaEquivalente(campo, { aprendidas = {}, respondidas = [], r
   return null;
 }
 
-async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga, pessoais = {}, aprendidas = {}, textosTreino = [], respondidas = [], separaNome = false, iaFn = ia.responder, equivFn = ia.mesmaPergunta }) {
+// "Ano de conclusão" com resposta "20/12/2030" vira "2030"; "Mês de conclusão" vira "12"
+function parteDaData(campo, decisao) {
+  if (!decisao || typeof decisao.valor !== 'string') return decisao;
+  const r = norm(campo.rotulo);
+  const m = decisao.valor.match(/(?:(\d{1,2})[/.-])?(\d{1,2})[/.-]((?:19|20)\d{2})/) || decisao.valor.match(/^((?:19|20)\d{2})[/.-](\d{1,2})/);
+  if (!m) return decisao;
+  const [ano, mes] = (m[1] || '').length === 4 ? [m[1], m[2]] : [m[3], m[2]];
+  if (/(^|\s)(ano|year)(\s|$)/.test(r)) return { ...decisao, valor: ehEscolha(campo) ? escolherOpcao(campo.opcoes || [], ano) || ano : ano };
+  if (/(^|\s)(mes|month)(\s|$)/.test(r)) {
+    const mm = String(Number(mes)).padStart(2, '0');
+    return { ...decisao, valor: ehEscolha(campo) ? (campo.opcoes || []).find((o) => Number(norm(o)) === Number(mes)) || escolherOpcao(campo.opcoes || [], mm) || mm : mm };
+  }
+  return decisao;
+}
+
+async function decidir(campo, ctx) {
+  return parteDaData(campo, await decidirBase(campo, ctx));
+}
+
+async function decidirBase(campo, { perfil: perfilBase, listas, respostasFixas, vaga, pessoais = {}, aprendidas = {}, textosTreino = [], respondidas = [], separaNome = false, iaFn = ia.responder, equivFn = ia.mesmaPergunta }) {
   const partes = String(perfilBase?.nome || '').trim().split(/\s+/);
   const perfil = { ...perfilBase, primeiro_nome: partes[0] || '', sobrenome: partes.slice(1).join(' ') };
   if (separaNome) perfil.nome = perfil.primeiro_nome; // ao lado de "Sobrenome", só o primeiro nome
@@ -278,6 +299,34 @@ async function decidir(campo, { perfil: perfilBase, listas, respostasFixas, vaga
     if (!ehEscolha(campo)) return { valor: origem.texto, fonte: 'origem' };
     const opcao = origem.opcoes.map((o) => escolherOpcao(campo.opcoes || [], o)).find(Boolean);
     if (opcao) return { valor: opcao, fonte: 'origem' };
+  }
+
+  // Formação: vem do Perfil (a que está em andamento, ou a mais recente)
+  const formacoes = listas?.formacoes || [];
+  const formacao = formacoes.find((f) => /andamento|cursando/i.test(f.status || '')) || formacoes[formacoes.length - 1];
+  if (curta && formacao) {
+    const deFormacao = (valor) => {
+      if (!valor) return null;
+      if (!ehEscolha(campo)) return { valor, fonte: 'perfil' };
+      const opcao = escolherOpcao(campo.opcoes || [], valor);
+      return opcao ? { valor: opcao, fonte: 'perfil' } : null;
+    };
+    if (/nivel de ensino superior|(status|situacao) (do|da|de) (curso|formacao|graduacao)|andamento do curso/.test(rotulo)) {
+      const r = deFormacao(formacao.status);
+      if (r) return r;
+    } else if (/^grau\b|grau de (instrucao|escolaridade|formacao)|escolaridade|nivel de (formacao|escolaridade|instrucao)|^degree|education level/.test(rotulo)) {
+      const r = deFormacao(formacao.nivel);
+      if (r) return r;
+    } else if (/universidade|faculdade|instituicao( de ensino)?|^escola|college|university|school( name)?$/.test(rotulo)) {
+      const r = deFormacao(formacao.instituicao);
+      if (r) return r;
+      // lista sem a sua faculdade: a própria pergunta manda escolher "outra"
+      const outra = ehEscolha(campo) && (campo.opcoes || []).find((o) => /^(outr[ao]s?|other)\b/i.test(norm(o)));
+      if (outra) return { valor: outra, fonte: 'regra' };
+    } else if (/^(curso|disciplina)\b|area de (formacao|estudo)|graduacao em|field of study|^major|nome do curso/.test(rotulo)) {
+      const r = deFormacao(formacao.curso);
+      if (r) return r;
+    }
   }
 
   const fixa = curta && REGRAS_FIXAS.find(([re]) => re.test(rotulo));
