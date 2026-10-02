@@ -36,6 +36,22 @@ function desligarAutopreenchimento() {
   fs.writeFileSync(arquivo, JSON.stringify(prefs));
 }
 
+// Fecha os Chrome que estão usando a pasta de perfil do Rota. Devolve true se fechou algum.
+function fecharChromeDoRota() {
+  const { execFileSync } = require('child_process');
+  try {
+    if (process.platform === 'win32') {
+      const pasta = PASTA_PERFIL.replace(/'/g, "''");
+      const script = `$p = Get-CimInstance Win32_Process -Filter "name='chrome.exe'" | Where-Object { $_.CommandLine -like '*${pasta}*' }; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; $p.Count`;
+      const n = Number(String(execFileSync('powershell.exe', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 20000 })).trim()) || 0;
+      if (n) console.log(`  (fechei ${n} processo(s) de um Chrome do Rota que tinha ficado aberto)`);
+      return n > 0;
+    }
+    execFileSync('pkill', ['-f', `user-data-dir=${PASTA_PERFIL}`]);
+    return true;
+  } catch { return false; }
+}
+
 async function abrirNavegador({ headless = process.env.NAVEGADOR_OCULTO === 'true' } = {}) {
   desligarAutopreenchimento();
   const opcoes = {
@@ -52,7 +68,16 @@ async function abrirNavegador({ headless = process.env.NAVEGADOR_OCULTO === 'tru
   else opcoes.channel = canal; // 'chromium' = modo oculto com o navegador completo (mais parecido com o real)
   if (headless) opcoes.args.push('--no-sandbox');
 
-  const contexto = await chromium.launchPersistentContext(PASTA_PERFIL, opcoes);
+  let contexto;
+  try {
+    contexto = await chromium.launchPersistentContext(PASTA_PERFIL, opcoes);
+  } catch (e) {
+    // Um Chrome do Rota ficou aberto (janela esquecida ou travada) segurando o perfil:
+    // fecha só ele (o seu Chrome pessoal usa outra pasta) e tenta de novo
+    if (!fecharChromeDoRota()) throw e;
+    await new Promise((r) => setTimeout(r, 2500));
+    contexto = await chromium.launchPersistentContext(PASTA_PERFIL, opcoes);
+  }
 
   const guardados = lerSessao();
   if (guardados.length) await contexto.addCookies(guardados).catch(() => {});
