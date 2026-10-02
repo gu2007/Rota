@@ -35,6 +35,9 @@ function lerConfiguracoes(bruto) {
     localizacao: bruto.localizacao || '',
     modelosAceitos: lista(bruto.modelos_aceitos).map((m) => m.toLowerCase()),
     incluirAfirmativas: bruto.incluir_afirmativas === 'true',
+    // sem nada salvo: só estágio
+    aceitaJunior: /junior/.test(String(bruto.niveis_aceitos || 'estagio')),
+    incluirSuporte: bruto.incluir_suporte === 'true',
     velocidade: bruto.velocidade === 'humana' ? 'humana' : 'rapida',
   };
 }

@@ -540,6 +540,13 @@ async function paginaAjustes() {
           <div class="campo inteiro"><label for="a-termos">Procurar por</label>
             <textarea id="a-termos" name="termos_busca" rows="3">${esc(c.termos_busca)}</textarea>
             <span class="ajuda">Separe com ponto e vírgula. Ex.: estágio desenvolvedor; estágio back-end</span></div>
+          <div class="campo inteiro"><label>Níveis</label>
+            <div style="display:flex;gap:16px;padding-top:6px">
+              <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" checked disabled> Estágio</label>
+              <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="nivel_junior" ${/junior/.test(c.niveis_aceitos || '') ? 'checked' : ''}> Júnior / trainee</label>
+              <label style="display:flex;gap:6px;align-items:center;font-weight:400"><input type="checkbox" name="incluir_suporte" ${c.incluir_suporte === 'true' ? 'checked' : ''}> Suporte, infraestrutura e redes</label>
+            </div>
+            <span class="ajuda">Sem "Júnior", só entram vagas de estágio. Sem "Suporte", só desenvolvimento, dados e nuvem.</span></div>
           <div class="campo inteiro"><label for="a-excluir">Nunca se candidatar se tiver</label>
             <input id="a-excluir" name="termos_excluir" type="text" value="${esc(c.termos_excluir)}">
             <span class="ajuda">Ex.: sênior; pleno; especialista</span></div>
@@ -848,6 +855,8 @@ conteudo.addEventListener('submit', async (ev) => {
       await api('PUT', '/configuracoes', {
         modo_teste: f.get('modo_teste') ? 'true' : 'false',
         incluir_afirmativas: f.get('incluir_afirmativas') ? 'true' : 'false',
+        niveis_aceitos: f.get('nivel_junior') ? 'estagio; junior' : 'estagio',
+        incluir_suporte: f.get('incluir_suporte') ? 'true' : 'false',
         velocidade: f.get('velocidade_rapida') ? 'rapida' : 'humana',
         nota_minima: f.get('nota_minima'),
         termos_busca: f.get('termos_busca'),

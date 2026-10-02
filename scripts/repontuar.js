@@ -18,7 +18,9 @@ async function main() {
     v.status = 'na_fila';
     console.log(`  ↺ conferir de novo  ${limparTitulo(v.titulo)}`);
   }
-  const alvo = todas.filter((v) => ['nova', 'na_fila', 'descartada'].includes(v.status) && v.motivo_status !== 'Descartada por você');
+  // descartes que não dependem da nota ficam como estão (repetida, encerrada, descartada por você)
+  const DESCARTE_FIXO = /^(Descartada por você|Mesma vaga|LinkedIn:|Marcada por você)/;
+  const alvo = todas.filter((v) => ['nova', 'na_fila', 'descartada'].includes(v.status) && !DESCARTE_FIXO.test(v.motivo_status || ''));
 
   let entraram = 0, sairam = 0;
   for (const resumo of alvo) {

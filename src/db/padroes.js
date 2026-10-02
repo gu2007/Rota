@@ -53,6 +53,8 @@ const CONFIGURACOES = {
   localizacao: 'São Paulo, SP',
   modelos_aceitos: 'presencial; hibrido; remoto',
   incluir_afirmativas: 'false',      // vagas reservadas a um grupo (pessoas negras, mulheres, PcD...)
+  niveis_aceitos: 'estagio',         // estagio | estagio; junior
+  incluir_suporte: 'false',          // vagas de suporte/help desk/infraestrutura/redes
   velocidade: 'rapida',               // rapida | humana (pausas e digitação de pessoa)
 };
 

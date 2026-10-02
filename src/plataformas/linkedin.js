@@ -181,7 +181,7 @@ async function resolverVaga(vaga, { pagina, contexto, config, repo }) {
   if (outra) {
     return { dados: { ...base, url_candidatura: url, plataforma_envio: plataforma, status: 'descartada', motivo_status: `Mesma vaga já está no sistema (#${outra.id})` }, resumo: 'repetida' };
   }
-  const { nota, justificativa } = await pontuar({ ...vaga, ...base, url_candidatura: url }, { config });
+  const { nota, justificativa } = await pontuar({ ...vaga, ...base, url_candidatura: url, descricaoLida: true }, { config });
   const aprovada = nota >= config.notaMinima;
   return {
     dados: {

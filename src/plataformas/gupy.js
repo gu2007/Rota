@@ -664,6 +664,7 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
   const respostas = [];
   let ultimo = null;
   const secoesFeitas = new Set();
+  let abriuPeloFinal = false;
   let ajudasIA = 0;
   let passo = 0;
   let pagina;
@@ -976,7 +977,18 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
         pagina = await confirmarDialogo(pagina, contexto, ctx);
         continue;
       }
-      if (await pagina.evaluate(acharBotao, botoes.final)) {
+      const textoFinal = await pagina.evaluate(acharBotao, botoes.final);
+      // nada preenchido ainda e o botão é "Candidatar-se": é a página da vaga, não o fim do formulário
+      if (textoFinal && !respostas.length && !campos.some((c) => c.rotulo) && !abriuPeloFinal && /candidat|apply|inscrev|aplicar/i.test(textoFinal)) {
+        abriuPeloFinal = true;
+        pagina = await clicarBotao(pagina, contexto);
+        await esperarPagina(pagina);
+        continue;
+      }
+      if (textoFinal && !respostas.length && !campos.some((c) => c.rotulo)) {
+        return fim('erro', `Não achei o formulário de candidatura (só o botão "${textoFinal}"). Veja os prints.`);
+      }
+      if (textoFinal) {
         if (ctx.config.modoTeste) return fim('simulada', 'Modo teste: tudo preenchido, parou antes de enviar');
         pagina = await clicarBotao(pagina, contexto);
         const final = await pagina.innerText('body');
