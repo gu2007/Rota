@@ -31,7 +31,8 @@
     "dados:importar": "node scripts/dados.js importar",
     "salvar": "node scripts/salvar.js",
     "marcar": "node scripts/marcar.js",
-    "perfil:importar": "node scripts/perfil-importar.js"
+    "perfil:importar": "node scripts/perfil-importar.js",
+    "rodar": "node scripts/rodar.js"
   },
   "engines": {
     "node": ">=18"

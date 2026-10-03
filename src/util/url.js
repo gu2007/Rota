@@ -14,6 +14,9 @@ function normalizarUrl(bruta) {
     if (gupyNumero) return require('../coleta/links-vagas').gupyCanonica(u.hostname.split('.')[0], gupyNumero[1]);
     const linkedin = /(^|\.)linkedin\.com$/.test(u.hostname) && u.pathname.match(/\/jobs\/view\/(?:[^/]*-)?(\d{7,})/);
     if (linkedin) return `https://www.linkedin.com/jobs/view/${linkedin[1]}`;
+    // Indeed: o que importa é o jk (rc/clk, viewjob, pagead...)
+    const jk = /(^|\.)indeed\.com$/.test(u.hostname) && (u.searchParams.get('jk') || u.searchParams.get('vjk'));
+    if (jk) return `https://br.indeed.com/viewjob?jk=${jk}`;
     let texto = u.toString();
     if (texto.endsWith('/')) texto = texto.slice(0, -1);
     return texto;
@@ -27,6 +30,7 @@ function detectarPlataformaEnvio(url) {
   if (host.endsWith('gupy.io')) return 'gupy';
   if (host.includes('infojobs')) return 'infojobs';
   if (/(^|\.)linkedin\.com$/.test(host)) return 'linkedin'; // o destino real é descoberto depois
+  if (/(^|\.)indeed\.com$/.test(host)) return 'indeed';     // idem
   return 'sites';
 }
 

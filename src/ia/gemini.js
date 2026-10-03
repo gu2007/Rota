@@ -276,6 +276,37 @@ async function classificarVaga({ titulo, empresa, descricao, incluirSuporte = fa
   } catch { return null; }
 }
 
+// Procura vagas na internet com a Pesquisa Google do próprio Gemini.
+// Devolve [{ titulo, empresa, local, url }] (os links são conferidos depois por coleta/web-busca.js)
+async function buscarVagasNaWeb({ termos, local = 'São Paulo', dias = 3 }, { fetchFn = fetch } = {}) {
+  if (!disponivel()) return [];
+  const modelo = process.env.GEMINI_MODELO || 'gemini-3.8-flash';
+  const prompt = [
+    `Pesquise na web vagas de ESTÁGIO em tecnologia publicadas nos últimos ${dias} dias, em ${local} ou remotas, para estas buscas: ${termos.join('; ')}.`,
+    'Área: desenvolvimento de software (back-end, front-end, full-stack), banco de dados, cloud/DevOps, dados. Nada de suporte, vendas, administração ou engenharia não ligada a software.',
+    'Procure em páginas de carreira das empresas e em plataformas de recrutamento (Gupy, InHire, Greenhouse, Lever, Workday, Solides, Kenoby, Abler, Recrutei, Pandapé, 99jobs, Vagas.com, Catho, CIEE, Nube, Companhia de Estágios).',
+    'Quero o link DIRETO da página de cada vaga, copiado exatamente da fonte. Nunca invente nem monte links. Nada de páginas de lista ou busca.',
+    'Responda SOMENTE um JSON array: [{"titulo": "...", "empresa": "...", "local": "...", "url": "https://..."}] com até 20 vagas.',
+  ].join('\n');
+  const resp = await fetchFn(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], tools: [{ google_search: {} }], generationConfig: { temperature: 0.2, maxOutputTokens: 4096 } }),
+  });
+  if (!resp.ok) throw new Error(`Gemini recusou a pesquisa na web (${resp.status}): ${(await resp.text()).slice(0, 160)}`);
+  const dados = await resp.json();
+  const cand = dados.candidates?.[0] || {};
+  const texto = (cand.content?.parts || []).map((p) => p.text || '').join('');
+  let lista = [];
+  try {
+    const m = texto.match(/\[[\s\S]*\]/);
+    lista = m ? JSON.parse(m[0]) : [];
+  } catch { lista = []; }
+  return (Array.isArray(lista) ? lista : [])
+    .filter((v) => v && /^https?:\/\//.test(String(v.url || '')) && v.titulo)
+    .map((v) => ({ titulo: String(v.titulo).slice(0, 200), empresa: v.empresa ? String(v.empresa).slice(0, 120) : null, local: v.local ? String(v.local).slice(0, 120) : null, url: String(v.url) }));
+}
+
 const SITUACOES = ['recebida', 'em_analise', 'avancou', 'teste', 'entrevista', 'proposta', 'aprovado', 'reprovado', 'outro'];
 
 // Diz se o e-mail é sobre um processo seletivo do candidato e em que etapa está; null se não for
@@ -308,4 +339,4 @@ async function entenderEmailProcesso({ assunto, de, texto, links = [], data }, {
   } catch { return null; }
 }
 
-module.exports = { classificarVaga, responder, escolherBotao, aproveitarResposta, mesmaPergunta, planejarFormulario, escolherHabilidades, completarVagasEmail, planejarTela, entenderEmailProcesso, SITUACOES, chamar, disponivel, montarPrompt, descreverCandidato, SEM_RESPOSTA, BOTAO_PROIBIDO };
+module.exports = { buscarVagasNaWeb, classificarVaga, responder, escolherBotao, aproveitarResposta, mesmaPergunta, planejarFormulario, escolherHabilidades, completarVagasEmail, planejarTela, entenderEmailProcesso, SITUACOES, chamar, disponivel, montarPrompt, descreverCandidato, SEM_RESPOSTA, BOTAO_PROIBIDO };
