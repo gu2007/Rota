@@ -12,6 +12,7 @@ const { decidir, norm, CURRICULO, detectarPessoal, escolherOpcao } = require('..
 const { dataLocal } = require('../util/tempo');
 const aprendizado = require('../candidatura/aprendizado');
 const ia = require('../ia/gemini');
+const { conferirArea } = require('../ia/conferir-area');
 
 const MAX_AJUDAS_IA = 4; // por vaga
 
@@ -655,7 +656,8 @@ async function ajudaDaIA(pagina, situacao, vaga, ctx) {
 
 // plataforma: 'gupy' ou 'sites'
 // aoTravar: se a candidatura não terminar, recebe a janela aberta (você termina e o robô observa)
-async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, plataforma = 'gupy', aoTravar } = {}) {
+// conferirFn: confere se a vaga é de TI antes de preencher (padrão: regras + IA; nos testes com iaFn, desligado)
+async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, plataforma = 'gupy', aoTravar, conferirFn } = {}) {
   const ehGupy = plataforma === 'gupy';
   definirVelocidade(ctx.config?.velocidade);
   const memoria = aprendizado.carregar();
@@ -719,6 +721,14 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
     const desafio = await pagina.evaluate(temDesafio);
     if (desafio) return ehGupy ? fim('captcha', `Verificação anti-robô na página da vaga (${desafio})`) : comVoce(`O site ${hostVaga} tem verificação anti-robô: essa candidatura é com você`);
     if (JA_CANDIDATADO.test(await pagina.innerText('body'))) return fim('pulada', 'Você já se candidatou a esta vaga');
+    // última barreira: só se candidata a vaga de tecnologia
+    const conferir = conferirFn || (iaFn ? null : conferirArea);
+    if (lerAntes && conferir) {
+      const descricao = vaga.descricao || (await pagina.innerText('body').catch(() => '')).slice(0, 8000);
+      const area = await conferir({ ...vaga, descricao }, { config: ctx.config }).catch(() => null);
+      if (area && !area.ok) return fim('descartada', area.motivo);
+      if (area) await ctx.log?.('info', 'gupy', `Área conferida: ${area.motivo}`);
+    }
     if (lerAntes && ctx.config?.velocidade === 'humana') await lerPagina(pagina);
 
     // formulário já na página da vaga: "Candidatar-se" vira o botão final (clicar agora enviaria vazio)

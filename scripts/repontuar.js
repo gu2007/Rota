@@ -3,6 +3,7 @@
 
 const { ambiente, lerConfiguracoes } = require('../src/config');
 const { pontuar, limparTitulo } = require('../src/ia/pontuador');
+const { conferirArea, CONFIRMADA } = require('../src/ia/conferir-area');
 
 async function main() {
   const repo = require('../src/db').repo();
@@ -26,7 +27,14 @@ async function main() {
   for (const resumo of alvo) {
     const vaga = await repo.vagas.obter(resumo.id); // listar não traz a descrição
     const titulo = limparTitulo(vaga.titulo); // títulos de e-mail vêm sujos
-    const { nota, justificativa } = await pontuar({ ...vaga, titulo }, { config });
+    // sem descrição, título genérico fica para conferir na hora de abrir a vaga
+    const lida = !!vaga.descricao;
+    let { nota, justificativa } = await pontuar({ ...vaga, titulo, descricaoLida: lida }, { config });
+    // com descrição: a IA confere se é mesmo de tecnologia (uma vez só por vaga)
+    if (nota >= config.notaMinima && vaga.descricao) {
+      const area = await conferirArea({ ...vaga, titulo }, { config });
+      if (!area.ok) { nota = 5; justificativa = area.motivo; } else if (area.motivo.includes(CONFIRMADA)) justificativa = `${justificativa}; ${area.motivo}`;
+    }
     const aprovada = nota >= config.notaMinima;
     const status = aprovada ? 'na_fila' : 'descartada';
     if (status !== vaga.status) {

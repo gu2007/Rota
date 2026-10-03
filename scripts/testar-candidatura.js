@@ -82,7 +82,7 @@ async function main() {
 
   // Se travar, a janela fica aberta: você termina e o Rota aprende olhando
   let observado = null;
-  const podeAssumir = process.stdout.isTTY && process.env.NAVEGADOR_OCULTO !== 'true';
+  const podeAssumir = process.env.NAVEGADOR_OCULTO !== 'true'; // janela visível: nunca fecha sozinha quando trava
   const aoTravar = podeAssumir ? async ({ contexto, pagina, resultado }) => {
     console.log(`\n   O Rota travou: ${String(resultado.motivo || resultado.resultado).slice(0, 200)}`);
     console.log('   >> Termine você mesmo nessa janela do Chrome. Eu fico olhando e aprendo as respostas e os botões.');
@@ -94,7 +94,7 @@ async function main() {
   const r = await modulos[plataforma].candidatar(vaga, ctx, { aoTravar });
   await repo.candidaturas.registrar({ vaga_id: vaga.id, plataforma, resultado: r.resultado, modo_teste: !enviar, motivo: r.motivo, respostas: r.respostas });
   const aguardando = await guardarPendentes(repo, vaga, r);
-  const status = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', enviada: 'candidatada' }[r.resultado];
+  const status = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', enviada: 'candidatada', descartada: 'descartada' }[r.resultado];
   await repo.vagas.atualizar(vaga.id, { status, motivo_status: aguardando || r.motivo || null });
 
   console.log(`3) Resultado: ${r.resultado.toUpperCase()}${r.motivo ? ` — ${r.motivo}` : ''}\n`);

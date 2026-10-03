@@ -3,10 +3,13 @@
 
 const normalizar = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
-const TI_TITULO = /(^|[^a-z])(ti|t\.i\.|tecnologia|desenvolv\w*|programacao|programador\w*|software|sistemas|dev|developer|back-?end|front-?end|full-?stack|dados|data|analytics|bi|node(\.js)?|javascript|typescript|python|java|c#|\.net|php|react|cloud|devops|infraestrutura|qa|testes? de software|seguranca da informacao|ciberseguranca|low-?code|computacao|web|mobile|suporte tecnico|help ?desk|banco de dados|sql)([^a-z]|$)/;
+// Termos que, sozinhos no título, já dizem que a vaga é de desenvolvimento/dados/nuvem
+const TI_TITULO = /(^|[^a-z])(ti|t\.i\.|informatica|desenvolv\w*|programacao|programador\w*|software|dev|devs|developer|back-?end|front-?end|full-?stack|node(\.js)?|javascript|typescript|python|java|c#|\.net|php|react|cloud|devops|computacao|banco de dados|sql|engenharia de (dados|software)|data engineer\w*|ciencias? de dados|data scien\w*|machine learning|inteligencia artificial|ia|qa|testes? de software|seguranca da informacao|ciberseguranca|low-?code|mobile|web)([^a-z]|$)/;
+// Termos fracos: "Consultoria em Benefícios, Dados..." não é TI. Só valem com a descrição confirmando
+const TI_FRACO = /(^|[^a-z])(dados|data|analytics|bi|sistemas|tecnologia|automacao|digital|inovacao|suporte tecnico|help ?desk)([^a-z]|$)/;
 // Vencem mesmo se o título citar outra área ("Dev para time de Marketing")
-const TI_FORTE = /(^|[^a-z])(desenvolv\w*|software|programador\w*|dev|developer|back-?end|front-?end|full-?stack|ti)([^a-z]|$)/;
-const AREA_FORA = /engenharia (civil|mecanica|eletrica|quimica|de producao|ambiental|agronomica|de alimentos|naval|metalurgica|de materiais)|arquitetura e urbanismo|edificacoes|obras|administrativ|contab|juridic|direito|recursos humanos|(^|[^a-z])rh([^a-z]|$)|departamento pessoal|marketing|vendas|comercial|financeir|logistic|compras|enfermagem|farmacia|nutricao|pedagogia|psicologia|eletrotecnica|eletronica|mecanica|atendimento ao cliente|operac(oes|ao)|operations|estrategia|strategy|pricing|precific|receita|credit|credito|casualty|seguros|economic|economia|agro|p&d|pesquisa e desenvolvimento|quimic|laboratorio|produtos?( |$)|projetos?( |$)|corporate desk|informacoes gerenciais|reporting|monetization|sac( |$)|atendimento tecnico|field service/;
+const TI_FORTE = /(^|[^a-z])(desenvolv\w*|software|programa(cao|dor\w*)|dev|developer|back-?end|front-?end|full-?stack|ti|informatica|cloud|devops|banco de dados|engenharia de (dados|software)|ciencias? de dados|data scien\w*|data engineer\w*)([^a-z]|$)/;
+const AREA_FORA = /engenharia (civil|mecanica|eletrica|quimica|de producao|ambiental|agronomica|de alimentos|naval|metalurgica|de materiais)|arquitetura e urbanismo|edificacoes|obras|administrativ|contab|juridic|direito|recursos humanos|(^|[^a-z])rh([^a-z]|$)|departamento pessoal|marketing|vendas|comercial|financeir|logistic|compras|enfermagem|farmacia|nutricao|pedagogia|psicologia|eletrotecnica|eletronica|mecanica|atendimento ao cliente|operac(oes|ao)|operations|estrategia|strategy|pricing|precific|receita|credit|credito|casualty|seguros|economic|economia|agro|p&d|pesquisa e desenvolvimento|quimic|laboratorio|produtos?( |$)|projetos?( |$)|corporate desk|informacoes gerenciais|reporting|monetization|sac( |$)|atendimento tecnico|field service|engenharia|engineering|administra\w*|consultori\w*|beneficios|governanc|governance|merchant|aeronav|aviacao|aerea|aereo|orcament|business|negocios|purchas|financ\w*|mechanical|(^|[^a-z])(seo|geo)([^a-z]|$)|aquisicao|talent|planejamento|qualidade|supply|suprimentos|manutencao|civil|ambiental|saude|medic\w*|hospital|clinic|designer|design grafico|comunicacao|jornalismo|eventos|indicadores|auditoria|fiscal|tributa\w*|riscos?( |$)|compliance|controladoria|tesouraria|cobranca|customer|sales|account|growth|conteudo|social media|redacao|traducao|project|administrator|recrutamento|seguranca do trabalho|meio ambiente|engenheir\w*|arquitet\w*|obra|predial|industrial|automotiv|farmac\w*|odonto|veterinar|educacao|letras|moda|turismo|hotelaria|gastronomia|imobiliari\w*|corretor/;
 // Suporte e infraestrutura: é TI, mas não é desenvolvimento (só com o ajuste ligado)
 const SUPORTE = /suporte|support|help ?desk|service ?desk|sustentacao|infraestrutura|infra( |$)|redes|network|field|manutencao|dcm|data ?center|noc( |$)/;
 // Indicam o nível, não a área: não contam como "combina"
@@ -68,12 +71,13 @@ async function pontuar(vaga, { config }) {
   const entrada = NIVEL_ENTRADA.test(titulo);
   let nota = 55;
   if (!TI_TITULO.test(titulo)) {
+    const fraco = TI_FRACO.test(titulo);
     const sinais = new Set((descricao.match(TI_NA_DESCRICAO) || []).map((t) => t.trim())).size;
     if (entrada && !descricao && !vaga.descricaoLida) {
       // Só título (alerta ou busca): entra para o bot conferir a descrição ao abrir
-      return { nota: Math.max(70, config.notaMinima), justificativa: 'Estágio sem área no título: a descrição vai ser conferida ao abrir a vaga' };
+      return { nota: Math.max(70, config.notaMinima), justificativa: `${fraco ? 'Área do título não é clara' : 'Estágio sem área no título'}: a descrição vai ser conferida ao abrir a vaga` };
     }
-    if (!(entrada && sinais >= 3)) return { nota: 25, justificativa: 'O título não indica uma vaga de tecnologia' };
+    if (!(entrada && sinais >= (fraco ? 2 : 3))) return { nota: 25, justificativa: 'O título não indica uma vaga de tecnologia' };
     nota = 50;
     motivos.push('programa de estágio com descrição de TI');
   } else {
@@ -131,4 +135,17 @@ async function pontuar(vaga, { config }) {
   return { nota, justificativa: motivos.join('; ') };
 }
 
-module.exports = { pontuar, normalizar, limparTitulo };
+// Usado antes de candidatar (sem IA): a vaga é mesmo de tecnologia?
+function areaPorRegras(vaga) {
+  const titulo = normalizar(limparTitulo(vaga.titulo));
+  const descricao = normalizar(vaga.descricao);
+  const fora = titulo.match(AREA_FORA);
+  const forte = TI_FORTE.test(titulo) || TI_TITULO.test(titulo);
+  const sinais = new Set((descricao.match(TI_NA_DESCRICAO) || []).map((t) => t.trim())).size;
+  if (fora && !TI_FORTE.test(titulo)) return { ok: false, motivo: `Área fora de TI (${fora[0].trim()})` };
+  if (forte) return { ok: true, motivo: 'título de TI' };
+  if (sinais >= 3) return { ok: true, motivo: 'descrição de TI' };
+  return { ok: false, motivo: 'Nem o título nem a descrição mostram que a vaga é de tecnologia' };
+}
+
+module.exports = { pontuar, normalizar, limparTitulo, areaPorRegras };

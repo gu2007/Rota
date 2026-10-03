@@ -6,6 +6,7 @@ const { lerConfiguracoes } = require('../config');
 const { dataLocal, horarioLocal, fimDoDia, MINUTO } = require('../util/tempo');
 const { normalizarUrl, detectarPlataformaEnvio } = require('../util/url');
 const { pontuar } = require('../ia/pontuador');
+const { observar } = require('../candidatura/observador');
 const { ModuloPendente } = require('../plataformas/base');
 const modulosPadrao = require('../plataformas');
 const { LISTAS } = require('../db/modelo');
@@ -130,14 +131,22 @@ function criarExecutor(repo, { intervaloMs = 30 * 1000, modulos = modulosPadrao 
       return;
     }
 
-    const r = await modulo.candidatar(vaga, ctx);
+    // janela visível: se travar, fica aberta com o aviso de ajuda para você terminar (o Rota só observa)
+    let observado = null;
+    const aoTravar = process.env.NAVEGADOR_OCULTO === 'true' ? undefined : async ({ contexto, pagina, resultado }) => {
+      await log('aviso', plataforma.codigo, `Precisa da sua ajuda no Chrome: ${vaga.titulo} — ${String(resultado.motivo || '').slice(0, 150)}`);
+      observado = await observar(contexto, pagina, { log: (m) => console.log(m), salvarPessoais: (p) => repo.pessoais.salvar(p) });
+      return observado;
+    };
+    const r = await modulo.candidatar(vaga, ctx, { aoTravar });
+    if (observado?.enviada) { r.resultado = 'enviada'; r.motivo = 'Enviada por você (o Rota observou)'; }
     await repo.candidaturas.registrar({
       vaga_id: vaga.id, plataforma: plataforma.codigo, resultado: r.resultado,
       modo_teste: ctx.config.modoTeste, motivo: r.motivo, respostas: r.respostas,
     });
 
     const aguardando = await guardarPendentes(repo, vaga, r);
-    const statusVaga = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { enviada: 'candidatada', simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila' }[r.resultado];
+    const statusVaga = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { enviada: 'candidatada', simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', descartada: 'descartada' }[r.resultado];
     await repo.vagas.atualizar(vaga.id, { status: statusVaga, motivo_status: aguardando || r.motivo || null });
     await repo.agenda.marcar(item.id, 'executado', r.resultado);
 

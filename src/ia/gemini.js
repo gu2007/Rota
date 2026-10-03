@@ -254,6 +254,28 @@ async function planejarFormulario({ campos, contexto, vaga }, { fetchFn = fetch 
   } catch { return {}; }
 }
 
+// Portão final antes de candidatar: a vaga é mesmo de tecnologia na área que o candidato quer?
+// Devolve { ti: true|false, area, motivo } ou null se a IA não respondeu
+async function classificarVaga({ titulo, empresa, descricao, incluirSuporte = false, aceitaJunior = false }, { fetchFn = fetch } = {}) {
+  if (!disponivel()) return null;
+  const prompt = [
+    'Você filtra vagas para um estudante de Sistemas de Informação (2º semestre) que quer SOMENTE vagas de tecnologia.',
+    'ACEITE (ti: true) só se o trabalho do dia a dia for de: desenvolvimento de software (back-end, front-end, full-stack, mobile, web), programação/automação com código, banco de dados/SQL, computação em nuvem/DevOps, engenharia ou ciência de dados, IA/machine learning, QA/testes de software' + (incluirSuporte ? ', suporte técnico/infraestrutura de TI' : '') + '.',
+    'RECUSE (ti: false) qualquer outra área, MESMO que a vaga cite dados, sistemas, Excel, tecnologia ou ferramentas: administração, negócios, consultoria, finanças, compras, marketing, SEO, vendas, RH, jurídico, engenharia civil/mecânica/elétrica/produção, manutenção, operações, logística, projetos, governança, atendimento' + (incluirSuporte ? '' : ', suporte técnico/help desk/infraestrutura') + '.',
+    aceitaJunior ? 'O nível pode ser estágio ou júnior.' : 'O nível precisa ser ESTÁGIO (ou aprendiz). Se for júnior, pleno, sênior, analista efetivo ou trainee: ti: false.',
+    'Banco de talentos genérico ou "diversas áreas" sem dizer que é de TI: ti: false.',
+    'Responda SOMENTE um JSON: {"ti": true|false, "area": "<área em poucas palavras>", "motivo": "<frase curta>"}',
+    `VAGA: ${titulo || ''} — ${empresa || ''}\n${String(descricao || '(sem descrição)').slice(0, 6000)}`,
+  ].join('\n\n');
+  const texto = await chamar(prompt, { temperatura: 0, json: true, fetchFn }).catch(() => null);
+  if (!texto) return null;
+  try {
+    const r = JSON.parse(String(texto).replace(/^```(json)?|```$/g, '').trim());
+    if (typeof r.ti !== 'boolean') return null;
+    return { ti: r.ti, area: String(r.area || '').slice(0, 80), motivo: String(r.motivo || '').slice(0, 200) };
+  } catch { return null; }
+}
+
 const SITUACOES = ['recebida', 'em_analise', 'avancou', 'teste', 'entrevista', 'proposta', 'aprovado', 'reprovado', 'outro'];
 
 // Diz se o e-mail é sobre um processo seletivo do candidato e em que etapa está; null se não for
@@ -286,4 +308,4 @@ async function entenderEmailProcesso({ assunto, de, texto, links = [], data }, {
   } catch { return null; }
 }
 
-module.exports = { responder, escolherBotao, aproveitarResposta, mesmaPergunta, planejarFormulario, escolherHabilidades, completarVagasEmail, planejarTela, entenderEmailProcesso, SITUACOES, chamar, disponivel, montarPrompt, descreverCandidato, SEM_RESPOSTA, BOTAO_PROIBIDO };
+module.exports = { classificarVaga, responder, escolherBotao, aproveitarResposta, mesmaPergunta, planejarFormulario, escolherHabilidades, completarVagasEmail, planejarTela, entenderEmailProcesso, SITUACOES, chamar, disponivel, montarPrompt, descreverCandidato, SEM_RESPOSTA, BOTAO_PROIBIDO };

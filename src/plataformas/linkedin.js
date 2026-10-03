@@ -4,6 +4,7 @@
 const { abrirNavegador, pausa, lerPagina } = require('../navegador/navegador');
 const { normalizarUrl, detectarPlataformaEnvio } = require('../util/url');
 const { pontuar } = require('../ia/pontuador');
+const { conferirArea } = require('../ia/conferir-area');
 const busca = require('../coleta/linkedin-busca');
 const fs = require('fs');
 const path = require('path');
@@ -204,10 +205,15 @@ async function resolverVaga(vaga, { pagina, contexto, config, repo }) {
     return { dados: { ...base, url_candidatura: url, plataforma_envio: plataforma, status: 'descartada', motivo_status: `Mesma vaga já está no sistema (#${outra.id})` }, resumo: 'repetida' };
   }
   const { nota, justificativa } = await pontuar({ ...vaga, ...base, url_candidatura: url, descricaoLida: true }, { config });
+  // a descrição já foi lida: a IA confere se é mesmo de tecnologia antes de ir para a fila
+  const area = nota >= config.notaMinima ? await conferirArea({ ...vaga, ...base }, { config }) : null;
+  if (area && !area.ok) {
+    return { dados: { ...base, url_candidatura: url, plataforma_envio: plataforma, nota: 5, justificativa: area.motivo, status: 'descartada', motivo_status: area.motivo }, resumo: `descartada: ${area.motivo}` };
+  }
   const aprovada = nota >= config.notaMinima;
   return {
     dados: {
-      ...base, url_candidatura: url, plataforma_envio: plataforma, nota, justificativa,
+      ...base, url_candidatura: url, plataforma_envio: plataforma, nota, justificativa: area ? `${justificativa}; ${area.motivo}` : justificativa,
       status: aprovada ? 'na_fila' : 'descartada',
       motivo_status: aprovada ? `Candidatura em: ${new URL(url).hostname}` : `Nota ${nota} abaixo do mínimo (${config.notaMinima})`,
     },
