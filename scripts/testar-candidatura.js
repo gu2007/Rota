@@ -68,6 +68,8 @@ async function main() {
     }
   }
 
+  // vaga descartada pelo filtro de TI: já segue para a próxima da fila (até 10)
+  for (let tentativa = 1; ; tentativa++) {
   console.log(`2) Candidatando em ${nomePlat} (${enviar ? 'DE VERDADE' : 'teste'}): ${vaga.titulo} — ${vaga.empresa || ''} [nota ${vaga.nota ?? '—'}]`);
   if (enviar) {
     const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
@@ -97,6 +99,13 @@ async function main() {
   const aguardando = await guardarPendentes(repo, vaga, r);
   const status = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', enviada: 'candidatada', descartada: 'descartada' }[r.resultado];
   await repo.vagas.atualizar(vaga.id, { status, motivo_status: aguardando || r.motivo || null });
+  if (r.resultado === 'descartada' && !link) {
+    console.log(`3) Descartada — ${r.motivo}\n`);
+    vaga = tentativa < 10 ? await repo.vagas.proximaDaFila(plataforma, config.notaMinima, { incluirTestadas: plataforma === 'sites' || enviar }) : null;
+    if (!vaga) { console.log(tentativa < 10 ? '   A fila acabou.\n' : '   10 vagas descartadas seguidas: parei aqui.\n'); break; }
+    console.log('   Indo para a próxima vaga da fila…\n');
+    continue;
+  }
 
   console.log(`3) Resultado: ${r.resultado.toUpperCase()}${r.motivo ? ` — ${r.motivo}` : ''}\n`);
   if (aguardando) console.log(`   → ${r.pendentes.length} pergunta(s) foram para a caixa "Perguntas" do painel. Responda lá e a vaga volta para a fila sozinha.\n`);
@@ -118,6 +127,8 @@ async function main() {
     }
   }
   console.log(`\n   Prints de cada etapa: ${r.pasta}\n`);
+  break;
+  }
   await repo.encerrar();
 }
 
