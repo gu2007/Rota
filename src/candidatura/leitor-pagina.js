@@ -365,23 +365,40 @@ function acharBotao(fonteRegex) {
   const camada = todos('[role=dialog], [aria-modal=true], dialog[open], body *').filter((e) => {
     if (!(e.matches('[role=dialog], [aria-modal=true], dialog[open]') || getComputedStyle(e).position === 'fixed')) return false;
     const r = e.getBoundingClientRect();
-    return r.width * r.height >= innerWidth * innerHeight * 0.35 && visivelB(e) && todos('button, [role=button], input, textarea', e).some(visivelB);
+    return r.width * r.height >= innerWidth * innerHeight * 0.35 && visivelB(e) && getComputedStyle(e).pointerEvents !== 'none' && e.id !== 'rota-aviso' && todos('button, [role=button], input, textarea', e).some(visivelB);
   }).pop();
+  // botão tapado por uma janela por cima não vale (clicar nele "por trás" bagunça o formulário)
+  const naFrente = (el) => {
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return true; // fora da tela: não dá para saber
+    let topo = document.elementFromPoint(x, y);
+    while (topo && topo.shadowRoot && topo.shadowRoot.elementFromPoint) { const d = topo.shadowRoot.elementFromPoint(x, y); if (!d || d === topo) break; topo = d; }
+    if (!topo) return true;
+    for (let n = topo; n; n = n.parentElement || (n.getRootNode && n.getRootNode().host)) if (n === el) return true;
+    return el.contains(topo);
+  };
+  const procurar = (lista, soNaFrente = false) => {
+    for (const el of lista) {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height || el.disabled || el.getAttribute('aria-disabled') === 'true' || el.closest('#rota-aviso')) continue;
+      if (soNaFrente && !naFrente(el)) continue;
+      const texto = textoDoBotao(el);
+      if (texto && texto.length <= 40 && re.test(texto)) {
+        el.setAttribute('data-rota-botao', '1');
+        return texto;
+      }
+    }
+    return null;
+  };
+  // primeiro na janela por cima; se ela não tiver o botão (ex.: barra de acessibilidade ou ajuda
+  // fixa ocupando a tela), procura na página toda
   if (camada) {
     const dentro = (el) => { for (let n = el; n; n = n.parentElement || (n.getRootNode && n.getRootNode().host)) if (n === camada) return true; return false; };
-    const naCamada = candidatos.filter(dentro);
-    if (naCamada.length) candidatos = naCamada;
+    const achado = procurar(candidatos.filter(dentro));
+    if (achado) return achado;
   }
-  for (const el of candidatos) {
-    const r = el.getBoundingClientRect();
-    if (!r.width || !r.height || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
-    const texto = textoDoBotao(el);
-    if (texto && texto.length <= 40 && re.test(texto)) {
-      el.setAttribute('data-rota-botao', '1');
-      return texto;
-    }
-  }
-  return null;
+  return procurar(candidatos, !!camada);
 }
 
 // Só desafios visíveis (ignora o reCAPTCHA v3 invisível)

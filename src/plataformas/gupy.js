@@ -8,6 +8,9 @@ const { abrirNavegador, pausa, digitar, lerPagina, definirVelocidade } = require
 const { lerCampos, acharBotao, temDesafio, botaoDesativado } = require('../candidatura/leitor-pagina');
 const secoes = require('../candidatura/secoes');
 const { avisar } = require('../navegador/aviso');
+const { aceitarCookies } = require('../navegador/cookies');
+const { entrarComSenha } = require('../navegador/login');
+const logins = require('../util/logins');
 const { decidir, norm, CURRICULO, detectarPessoal, escolherOpcao } = require('../candidatura/respostas');
 const { dataLocal } = require('../util/tempo');
 const aprendizado = require('../candidatura/aprendizado');
@@ -29,7 +32,7 @@ const SUCESSO = /candidatura (enviada|realizada|conclu[ií]da|finalizada|recebid
 const CURRICULO_INCOMPLETO = /precisa preencher (o )?seu curr[ií]culo|complete (o )?seu curr[ií]culo|preencher curr[ií]culo/i;
 // avisos por cima da página (cookies, notificações): fecha recusando
 // cookies: sempre a opção que recusa o que não é essencial
-const BASE_FECHAR = 'n[aã]o,? obrigad[oa]|rejeitar( todos| tudo| cookies)?|recusar( todos| cookies)?|reject( all| cookies)?|decline( all)?|aceitar (apenas|somente) (os )?(necess[aá]rios|essenciais)|agora n[aã]o|dispensar|fechar aviso|entendi|ok, entendi';
+const BASE_FECHAR = 'n[aã]o,? obrigad[oa]|agora n[aã]o|dispensar|fechar aviso|entendi|ok, entendi|aceitar (todos|tudo|cookies|todos os cookies)|accept (all|cookies|all cookies)|allow all( cookies)?|permitir todos'; // cookies: aceita (pedido do Gustavo); o resto fica com navegador/cookies.js
 const TESTE_ONLINE = /teste (de |do )?(perfil|comportamental|l[oó]gic|ingl[eê]s|online|t[eé]cnico|conhecimento)|game|jogo de|avalia[cç][aã]o (online|comportamental)/i;
 
 async function textoTitulos(pagina) {
@@ -39,6 +42,7 @@ async function textoTitulos(pagina) {
 
 // tenta os textos conhecidos e depois o "X" de qualquer diálogo
 async function fecharAvisos(pagina, botoes) {
+  await aceitarCookies(pagina);
   for (let i = 0; i < 4; i++) {
     let achou = await pagina.evaluate(acharBotao, botoes.fechar).catch(() => null);
     if (!achou) {
@@ -143,6 +147,33 @@ async function escolherSugestao(pagina, valor, esperaMs = 3500, soParecida = fal
   return true;
 }
 
+// Digita o telefone tecla por tecla e confere o que ficou no campo. Tenta, nessa ordem:
+// só o número nacional (11985893420) depois do "+55" que o site já pôs; o número nacional num campo limpo;
+// com o +55 na frente.
+async function preencherTelefone(el, valor) {
+  const digitos = (t) => String(t || '').replace(/\D/g, '');
+  let nacional = digitos(valor);
+  if (nacional.length >= 12 && nacional.startsWith('55')) nacional = nacional.slice(2);
+  const confere = async () => digitos(await el.inputValue().catch(() => '')).endsWith(nacional);
+  const limpar = async () => { await el.click({ timeout: 4000 }).catch(() => {}); await el.press('Control+A').catch(() => {}); await el.press('Backspace').catch(() => {}); await el.fill('').catch(() => {}); };
+  const teclar = async (t) => { await el.pressSequentially(t, { delay: 70 }).catch(() => {}); await pausa(300, 600); };
+
+  const atual = String(await el.inputValue().catch(() => '')).trim();
+  if (/^\+?\d{1,3}\s*$/.test(atual)) {
+    // "+55 " já escrito pelo site: só completa
+    await el.click({ timeout: 4000 }).catch(() => {});
+    await el.press('End').catch(() => {});
+    await teclar(nacional);
+    if (await confere()) return;
+  }
+  for (const tentativa of [nacional, `+55${nacional}`]) {
+    await limpar();
+    await teclar(tentativa);
+    if (await confere()) return;
+  }
+  await el.fill(nacional).catch(() => {}); // último recurso
+}
+
 async function preencher(pagina, campo, valor) {
   const el = pagina.locator(`[data-rota="${campo.id}"]`);
   if (campo.tipo !== 'arquivo') await el.scrollIntoViewIfNeeded().catch(() => {});
@@ -156,10 +187,10 @@ async function preencher(pagina, campo, valor) {
         await escolherSugestao(pagina, String(valor), 6000);
         break;
       }
-      // telefone com o código do país já escrito (+55): mantém e completa
-      if (campo.html === 'tel') {
-        const atual = String(await el.inputValue().catch(() => '')).trim();
-        if (/^\+?\d{1,3}$/.test(atual) && !String(valor).startsWith(atual)) valor = `${atual} ${String(valor).replace(/^\+?55\s*/, '')}`;
+      // telefone: máscaras e seletor de país (+55) recusam o número colado de uma vez
+      if (campo.html === 'tel' || (/^[\d\s()+-]{10,}$/.test(String(valor)) && /telefone|celular|phone|mobile|whats|contato/i.test(campo.rotulo))) {
+        await preencherTelefone(el, valor);
+        break;
       }
       await digitar(el, campo.limite ? String(valor).slice(0, campo.limite) : valor);
       // alguns campos viram autocompletar depois de digitar
@@ -553,7 +584,7 @@ const NAO_CLICAR_AGENTE = /enviar|submit|finaliz|conclu|candidatar|candidate-se|
 // perguntas = o que só o usuário sabe; vai para a caixa Perguntas
 async function agenteIA(pagina, ctx, vaga, { respostas, textosTreino = [] }) {
   if (!ia.disponivel()) return { agiu: false, perguntas: [] };
-  const contexto = { perfil: ctx.perfil, listas: ctx.listas, respostasFixas: ctx.respostasFixas, textosTreino, respondidas: ctx.respondidas || [] };
+  const contexto = { perfil: ctx.perfil, listas: ctx.listas, respostasFixas: ctx.respostasFixas, textosTreino, respondidas: [...(ctx.respondidas || []), ...Object.values(aprendizado.carregar().respostas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) }))] };
   const jaTentado = [];
   const perguntas = [];
   let agiu = false;
@@ -705,7 +736,8 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
     if (!ehGupy) {
       try {
         const origem = new URL(vaga.url_candidatura || vaga.url).origin;
-        if (!/linkedin\.com|gupy\.io/.test(origem)) {
+        // site com login salvo (InfoJobs...) não é limpo: perderia o login
+        if (!/linkedin\.com|gupy\.io/.test(origem) && plataforma === 'sites' && !logins.obter(origem)) {
           const cdp = await contexto.newCDPSession(pagina);
           await cdp.send('Storage.clearDataForOrigin', { origin: origem, storageTypes: 'all' });
           await cdp.detach();
@@ -719,13 +751,15 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
     }
     await pagina.goto(vaga.url_candidatura || vaga.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await esperarPagina(pagina);
+    await aceitarCookies(pagina);
     const desafio = await pagina.evaluate(temDesafio);
     if (desafio) return ehGupy ? fim('captcha', `Verificação anti-robô na página da vaga (${desafio})`) : comVoce(`O site ${hostVaga} tem verificação anti-robô: essa candidatura é com você`);
     if (JA_CANDIDATADO.test(await pagina.innerText('body'))) return fim('pulada', 'Você já se candidatou a esta vaga');
     // última barreira: só se candidata a vaga de tecnologia
     const conferir = conferirFn || (iaFn ? null : conferirArea);
     if (lerAntes && conferir) {
-      const descricao = vaga.descricao || (await pagina.innerText('body').catch(() => '')).slice(0, 8000);
+      // descrição curta (só um trecho da busca): lê a página da vaga inteira
+      const descricao = String(vaga.descricao || '').length >= 400 ? vaga.descricao : (await pagina.innerText('body').catch(() => '')).slice(0, 8000);
       const area = await conferir({ ...vaga, descricao }, { config: ctx.config }).catch(() => null);
       if (area && !area.ok) return fim('descartada', area.motivo);
       if (area) await ctx.log?.('info', 'gupy', `Área conferida: ${area.motivo}`);
@@ -761,6 +795,7 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
   };
 
   let loginFeito = false;
+  let loginsFeitos = 0; // logins com senha salva em sites que não são a Gupy
   let assinaturaAnterior = null; // detecta "Continuar" que não sai do lugar
   let confirmouNaTrava = false;
   let personalizou = false;
@@ -774,8 +809,26 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
       if (desafio) return ehGupy ? fim('captcha', `Verificação anti-robô durante a candidatura (${desafio})`) : comVoce(`O site ${hostVaga} pediu verificação anti-robô: essa candidatura é com você`);
 
       if (await naTelaDeLogin(pagina)) {
-        // o bot não cria contas em sites de empresa
-        if (!ehGupy) return comVoce(`O site ${hostVaga} pede login ou criar conta: essa candidatura é com você`);
+        // site de empresa/InfoJobs: entra com o login salvo (npm run login:salvar); o Rota nunca cria conta
+        if (!ehGupy) {
+          const cred = logins.obter(pagina.url()) || logins.obter(hostVaga);
+          if (!cred) return comVoce(`O site ${hostVaga} pede login. Salve o seu login dele com "npm run login:salvar" (ou entre você mesmo nessa janela)`);
+          if (loginsFeitos >= 2) return comVoce(`O site ${hostVaga} pediu login de novo depois de entrar: termine você nessa janela`);
+          loginsFeitos++;
+          await ctx.log?.('info', 'gupy', `Entrando em ${cred.dominio} com o login salvo...`);
+          const r = await entrarComSenha(pagina, cred);
+          if (!r.ok) return comVoce(`Não consegui entrar em ${cred.dominio}: ${r.motivo}`);
+          await ctx.log?.('info', 'gupy', `Login em ${cred.dominio} feito.`);
+          await esperarPagina(pagina);
+          // alguns sites voltam para a vaga, outros para a página inicial
+          const temForm = (await pagina.evaluate(lerCampos).catch(() => [])).some((c) => !c.preenchido && c.rotulo && !/senha|password/i.test(c.rotulo));
+          if (!temForm && !(await pagina.evaluate(acharBotao, botoes.proximo).catch(() => null))) {
+            const parada3 = await abrirVaga(false);
+            if (parada3) return parada3;
+          }
+          etapa--;
+          continue;
+        }
         if (loginFeito) return fim('erro', 'A Gupy pediu login de novo logo depois de entrar. Veja os prints.');
         await registrar('tela-de-login', { url: pagina.url(), clicaveis: await pagina.evaluate(listarClicaveis).catch(() => []) });
         const login = await fazerLogin(pagina);
@@ -842,7 +895,7 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
       const paraPlano = campos.filter((c) => !c.preenchido && c.rotulo && !c.autopreencher && !['arquivo', 'checkbox'].includes(c.tipo));
       const fazerPlano = planoFn || (!iaFn && ia.disponivel() ? ia.planejarFormulario : null);
       const plano = paraPlano.length && fazerPlano
-        ? await fazerPlano({ campos: paraPlano, vaga, contexto: { perfil: ctx.perfil, listas: ctx.listas, respostasFixas: ctx.respostasFixas, textosTreino: memoria.textos || [], respondidas: ctx.respondidas || [] } }).catch(() => ({}))
+        ? await fazerPlano({ campos: paraPlano, vaga, contexto: { perfil: ctx.perfil, listas: ctx.listas, respostasFixas: ctx.respostasFixas, textosTreino: memoria.textos || [], respondidas: [...(ctx.respondidas || []), ...Object.values(aprendizado.carregar().respostas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) }))] } }).catch(() => ({}))
         : {};
       for (const campo of campos) {
         if (campo.preenchido || campo.autopreencher) continue;
@@ -862,8 +915,8 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
         }
         const decisao = await decidir(campo, { ...ctx, vaga, separaNome, plano, aprendidas: memoria.respostas, textosTreino: memoria.textos || [], ...(iaFn ? { iaFn } : {}) });
         if (!decisao) {
-          if (campo.tipo === 'arquivo' && CURRICULO.test(norm(campo.rotulo))) {
-            return fim('erro', `A vaga pede o currículo, mas não achei o arquivo em "${ctx.perfil.curriculo_arquivo || '(vazio)'}". Confira o caminho em Perfil > Arquivo do currículo.`);
+          if (campo.tipo === 'arquivo' && (CURRICULO.test(norm(campo.rotulo)) || (campo.obrigatorio && /pdf|doc/i.test(campo.aceita || '') && !/foto|photo|imagem/i.test(campo.rotulo)))) {
+            return fim('erro', `A vaga pede o currículo, mas não achei o arquivo em "${ctx.perfil.curriculo_arquivo || '(vazio)'}". Confira o caminho em Perfil > Arquivo do currículo ou copie o PDF para dados\\curriculo.pdf.`);
           }
           if (campo.obrigatorio) {
             const detalhe = campo.opcoes?.length ? ` [${campo.tipo}, ${campo.opcoes.length} opções: ${campo.opcoes.slice(0, 3).join(' | ')}${campo.opcoes.length > 3 ? '…' : ''}]` : ` [${campo.tipo}]`;

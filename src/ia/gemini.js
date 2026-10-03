@@ -234,6 +234,7 @@ async function planejarFormulario({ campos, contexto, vaga }, { fetchFn = fetch 
     '- "Instituição", "Universidade", "Curso", "Semestre", "Previsão de formatura" → use a Formação e as respostas do candidato.',
     '- "Empresa atual", "Cargo atual", "Último emprego" → use as Experiências (a mais recente ou a atual).',
     '- Idiomas, disponibilidade, pretensão, modelo de trabalho → use as respostas e declarações do candidato.',
+    '- "Perguntas de formulário que o candidato já respondeu" são exemplos reais (inclusive o que ele preencheu à mão quando o robô travou): a mesma informação pedida com outras palavras ou em outra língua tem a MESMA resposta (adapte ao formato e às opções do campo).',
     'Regras:',
     '- Use SOMENTE fatos dos dados. Nunca invente documento, número, nota, nível, experiência ou tecnologia.',
     '- Campo com opções: responda com o texto EXATO de uma das opções.',
@@ -264,7 +265,10 @@ async function classificarVaga({ titulo, empresa, descricao, incluirSuporte = fa
     'RECUSE (ti: false) qualquer outra área, MESMO que a vaga cite dados, sistemas, Excel, tecnologia ou ferramentas: administração, negócios, consultoria, finanças, compras, marketing, SEO, vendas, RH, jurídico, engenharia civil/mecânica/elétrica/produção, manutenção, operações, logística, projetos, governança, atendimento' + (incluirSuporte ? '' : ', suporte técnico/help desk/infraestrutura') + '.',
     aceitaJunior ? 'O nível pode ser estágio ou júnior.' : 'O nível precisa ser ESTÁGIO (ou aprendiz). Se for júnior, pleno, sênior, analista efetivo ou trainee: ti: false.',
     'Banco de talentos genérico ou "diversas áreas" sem dizer que é de TI: ti: false.',
-    'Responda SOMENTE um JSON: {"ti": true|false, "area": "<área em poucas palavras>", "motivo": "<frase curta>"}',
+    'Decida pela DESCRIÇÃO (atividades e requisitos), nunca só pelo título: "Estágio TI" que é atender chamados é suporte; "Estágio de Dados" que é Excel/planilha/relatório de negócio é área de negócio.',
+    'ti: true SOMENTE se a descrição pedir pelo menos 2 coisas técnicas concretas do dia a dia (ex.: programar em uma linguagem, APIs, SQL/banco de dados, cloud/AWS/Azure, Git, frameworks, pipelines de dados). Liste essas evidências.',
+    'Sem descrição (ou só o título): ti: false, motivo "sem descrição para conferir".',
+    'Responda SOMENTE um JSON: {"ti": true|false, "area": "<área em poucas palavras>", "evidencias": ["<requisito técnico citado>", ...], "motivo": "<frase curta>"}',
     `VAGA: ${titulo || ''} — ${empresa || ''}\n${String(descricao || '(sem descrição)').slice(0, 6000)}`,
   ].join('\n\n');
   const texto = await chamar(prompt, { temperatura: 0, json: true, fetchFn }).catch(() => null);
@@ -272,7 +276,10 @@ async function classificarVaga({ titulo, empresa, descricao, incluirSuporte = fa
   try {
     const r = JSON.parse(String(texto).replace(/^```(json)?|```$/g, '').trim());
     if (typeof r.ti !== 'boolean') return null;
-    return { ti: r.ti, area: String(r.area || '').slice(0, 80), motivo: String(r.motivo || '').slice(0, 200) };
+    const evidencias = Array.isArray(r.evidencias) ? r.evidencias.map((e) => String(e).slice(0, 60)).slice(0, 6) : [];
+    // a IA disse que é TI mas não achou nada técnico na descrição: não confia
+    const ti = r.ti && evidencias.length >= 2;
+    return { ti, area: String(r.area || '').slice(0, 80), evidencias, motivo: ti || !r.ti ? String(r.motivo || '').slice(0, 200) : 'a descrição não cita requisitos técnicos (linguagem, SQL, cloud...)' };
   } catch { return null; }
 }
 

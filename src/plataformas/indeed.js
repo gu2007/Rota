@@ -58,6 +58,7 @@ async function descobrirDestino(pagina, contexto) {
 async function resolverVaga(vaga, { pagina, contexto, config, repo }) {
   await pagina.goto(vaga.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
   await pausa(2500, 4500);
+  await require('../navegador/cookies').aceitarCookies(pagina);
   if (await pagina.evaluate(temDesafio).catch(() => null)) return { erro: 'O Indeed pediu verificação anti-robô: paro por agora.' };
   await lerPagina(pagina).catch(() => {});
   const info = await pagina.evaluate(lerVagaIndeed);

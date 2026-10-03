@@ -290,7 +290,10 @@ async function decidirBase(campo, { perfil: perfilBase, listas, respostasFixas, 
   }
   if (campo.tipo === 'arquivo') {
     // "Copiar como caminho" do Windows põe aspas
-    const arquivo = String(perfil.curriculo_arquivo || '').trim().replace(/^["']|["']$/g, '');
+    // se o caminho do Perfil não existir mais, usa dados/curriculo.pdf (é só copiar o PDF para lá)
+    const doPerfil = String(perfil.curriculo_arquivo || '').trim().replace(/^["']|["']$/g, '');
+    const reserva = require('path').join(__dirname, '..', '..', 'dados', 'curriculo.pdf');
+    const arquivo = doPerfil && fs.existsSync(doPerfil) ? doPerfil : reserva;
     // Upload genérico que aceita PDF/DOC e não pede outro documento é o currículo
     const generico = /arquivo|file|anexo|anexar|upload|choose|drop|escolh|selecion|arraste|carregar|enviar|attach/.test(rotulo) || !rotulo
       || /pdf|doc/.test(campo.aceita || '');

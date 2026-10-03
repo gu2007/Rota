@@ -5,7 +5,7 @@
 const { areaPorRegras } = require('./pontuador');
 const ia = require('./gemini');
 
-const CONFIRMADA = 'TI confirmada';
+const CONFIRMADA = 'TI conferida na descrição'; // (as antigas "TI confirmada" são conferidas de novo)
 
 async function conferirArea(vaga, { config = {} } = {}) {
   if (vaga.origem_coleta === 'manual') return { ok: true, motivo: 'vaga escolhida por você', fonte: 'manual' };
@@ -18,7 +18,7 @@ async function conferirArea(vaga, { config = {} } = {}) {
       incluirSuporte: !!config.incluirSuporte, aceitaJunior: !!config.aceitaJunior,
     }).catch(() => null);
     if (r) return r.ti
-      ? { ok: true, motivo: `${CONFIRMADA} pela IA (${r.area})`, fonte: 'ia' }
+      ? { ok: true, motivo: `${CONFIRMADA} pela IA (${r.area}: ${r.evidencias.slice(0, 3).join(', ')})`, fonte: 'ia' }
       : { ok: false, motivo: `A IA viu que não é de tecnologia: ${r.area}${r.motivo ? ` — ${r.motivo}` : ''}`, fonte: 'ia' };
   }
   return { ...regras, fonte: 'regra' };

@@ -32,7 +32,10 @@
     "salvar": "node scripts/salvar.js",
     "marcar": "node scripts/marcar.js",
     "perfil:importar": "node scripts/perfil-importar.js",
-    "rodar": "node scripts/rodar.js"
+    "rodar": "node scripts/rodar.js",
+    "login:salvar": "node scripts/login.js salvar",
+    "login:listar": "node scripts/login.js listar",
+    "login:remover": "node scripts/login.js remover"
   },
   "engines": {
     "node": ">=18"

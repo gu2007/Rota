@@ -48,6 +48,7 @@ async function buscar(pagina, { termos, maxDias = 2, log = async () => {} }) {
     try {
       await pagina.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
       await pausa(2500, 4500);
+      await require('../navegador/cookies').aceitarCookies(pagina);
       if (await pagina.evaluate(temDesafio).catch(() => null)) {
         await log('aviso', 'infojobs', 'O InfoJobs pediu verificação anti-robô: busca parada por agora.');
         break;
