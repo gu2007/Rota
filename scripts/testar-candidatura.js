@@ -92,7 +92,8 @@ async function main() {
     return observado;
   } : undefined;
   const r = await modulos[plataforma].candidatar(vaga, ctx, { aoTravar });
-  await repo.candidaturas.registrar({ vaga_id: vaga.id, plataforma, resultado: r.resultado, modo_teste: !enviar, motivo: r.motivo, respostas: r.respostas });
+  // descartada (não é de TI): nem chegou a tentar, então não entra no histórico de candidaturas
+  if (r.resultado !== 'descartada') await repo.candidaturas.registrar({ vaga_id: vaga.id, plataforma, resultado: r.resultado, modo_teste: !enviar, motivo: r.motivo, respostas: r.respostas });
   const aguardando = await guardarPendentes(repo, vaga, r);
   const status = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', enviada: 'candidatada', descartada: 'descartada' }[r.resultado];
   await repo.vagas.atualizar(vaga.id, { status, motivo_status: aguardando || r.motivo || null });

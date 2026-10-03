@@ -140,7 +140,7 @@ function criarExecutor(repo, { intervaloMs = 30 * 1000, modulos = modulosPadrao 
     };
     const r = await modulo.candidatar(vaga, ctx, { aoTravar });
     if (observado?.enviada) { r.resultado = 'enviada'; r.motivo = 'Enviada por você (o Rota observou)'; }
-    await repo.candidaturas.registrar({
+    if (r.resultado !== 'descartada') await repo.candidaturas.registrar({
       vaga_id: vaga.id, plataforma: plataforma.codigo, resultado: r.resultado,
       modo_teste: ctx.config.modoTeste, motivo: r.motivo, respostas: r.respostas,
     });
