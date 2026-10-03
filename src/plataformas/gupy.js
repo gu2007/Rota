@@ -685,9 +685,10 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
     await pagina?.screenshot({ path: `${base}.png`, fullPage: true, mask, maskColor: '#22262b' }).catch(() => {});
     if (extra) fs.writeFileSync(`${base}.json`, JSON.stringify(extra, null, 2));
   };
+  // "return fim(...)" sem await: o finally roda antes do print terminar, então "ultimo" é marcado já no começo
   const fim = async (resultado, motivo, nome = resultado) => {
-    await registrar(nome, { resultado, motivo, url: pagina?.url(), respostas });
     ultimo = { resultado, motivo };
+    await registrar(nome, { resultado, motivo, url: pagina?.url(), respostas });
     return { resultado, motivo, respostas, pasta };
   };
   // site que pede conta ou tem CAPTCHA: vai para a aba "Para você"
@@ -1055,6 +1056,7 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
   } catch (e) {
     return fim('erro', e.message.split('\n')[0].slice(0, 300), 'excecao');
   } finally {
+    await pausa(300, 600);
     if (aoTravar && ['erro', 'pulada'].includes(ultimo?.resultado)) {
       ultimo.observado = await aoTravar({ contexto: nav.contexto, pagina, resultado: ultimo }).catch(() => null);
     }

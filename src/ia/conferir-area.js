@@ -8,6 +8,7 @@ const ia = require('./gemini');
 const CONFIRMADA = 'TI confirmada';
 
 async function conferirArea(vaga, { config = {} } = {}) {
+  if (vaga.origem_coleta === 'manual') return { ok: true, motivo: 'vaga escolhida por você', fonte: 'manual' };
   const regras = areaPorRegras(vaga);
   if (!regras.ok && /Área fora de TI/.test(regras.motivo)) return { ok: false, motivo: regras.motivo, fonte: 'regra' };
   if (String(vaga.justificativa || '').includes(CONFIRMADA)) return { ok: true, motivo: CONFIRMADA, fonte: 'anterior' };
