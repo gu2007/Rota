@@ -11,7 +11,13 @@ function descreverCandidato({ perfil, listas = {}, respostasFixas = [], textosTr
   const add = (titulo, itens) => { if (itens.length) linhas.push(`${titulo}:\n${itens.map((i) => `- ${i}`).join('\n')}`); };
   linhas.push(`Nome: ${perfil.nome || ''}\nCidade: ${perfil.cidade || ''}\nObjetivo: ${perfil.objetivo || ''}`);
   if (perfil.resumo) linhas.push(`Sobre mim (palavras do candidato):\n${perfil.resumo}`);
-  add('Formação', (listas.formacoes || []).map((f) => `${f.curso} — ${f.instituicao || ''} (${f.status || ''}, ${f.inicio || '?'} a ${f.fim || '?'})`));
+  add('Formação', (listas.formacoes || []).map((f) => `${f.curso} — ${f.instituicao || ''}${f.nivel ? `, ${f.nivel}` : ''} (${f.status || ''}, ${f.inicio || '?'} a ${f.fim || '?'})`));
+  // "Escolaridade" quase nunca está escrita assim: deduz da formação
+  const superior = (listas.formacoes || []).find((f) => /gradua|bacharel|licenciatura|tecn[oó]logo|superior/i.test(`${f.nivel || ''} ${f.curso || ''}`));
+  if (superior) {
+    const cursando = /andamento|cursando/i.test(superior.status || '');
+    linhas.push(`Escolaridade: Ensino médio completo; Ensino superior ${cursando ? 'incompleto (cursando)' : 'completo'} — ${superior.curso}, ${superior.instituicao || ''}`);
+  }
   add('Experiências', (listas.experiencias || []).map((e) => `${e.cargo} — ${e.empresa || ''} (${e.inicio || '?'} a ${e.fim || 'atual'}): ${e.descricao || ''}`));
   add('Projetos', (listas.projetos || []).map((p) => `${p.nome} [${p.tecnologias || ''}]: ${p.descricao || ''} ${p.repo_url || ''}`));
   add('Cursos', (listas.cursos || []).map((c) => `${c.nome} — ${c.instituicao || ''}${c.carga_horaria ? `, ${c.carga_horaria}h` : ''}`));
@@ -213,6 +219,41 @@ async function planejarTela({ tela, titulos, contexto, vaga, jaTentado = [] }, {
   } catch { return []; }
 }
 
+// Lê a etapa inteira de uma vez e propõe a resposta de cada campo com base nos dados do candidato.
+// Quem decide é o robô: as regras (dados pessoais, diversidade, termos) vêm antes deste plano.
+async function planejarFormulario({ campos, contexto, vaga }, { fetchFn = fetch } = {}) {
+  if (!disponivel() || !campos.length) return {};
+  const lista = campos.map((c) => ({
+    id: c.id, tipo: c.tipo, pergunta: String(c.rotulo || '').slice(0, 300), obrigatorio: !!c.obrigatorio,
+    ...(c.opcoes?.length ? { opcoes: c.opcoes.slice(0, 40) } : {}), ...(c.limite ? { limite: c.limite } : {}),
+  }));
+  const prompt = [
+    'Você ajuda um robô a preencher UMA etapa de um formulário de candidatura a vaga, NO LUGAR do candidato.',
+    'Para cada campo da lista, diga a resposta usando os DADOS DO CANDIDATO. Relacione perguntas escritas de outro jeito com os dados que existem:',
+    '- "Escolaridade", "Grau de instrução", "Nível de formação" → use a Escolaridade/Formação.',
+    '- "Instituição", "Universidade", "Curso", "Semestre", "Previsão de formatura" → use a Formação e as respostas do candidato.',
+    '- "Empresa atual", "Cargo atual", "Último emprego" → use as Experiências (a mais recente ou a atual).',
+    '- Idiomas, disponibilidade, pretensão, modelo de trabalho → use as respostas e declarações do candidato.',
+    'Regras:',
+    '- Use SOMENTE fatos dos dados. Nunca invente documento, número, nota, nível, experiência ou tecnologia.',
+    '- Campo com opções: responda com o texto EXATO de uma das opções.',
+    '- Datas: no formato que a pergunta mostrar (ex.: "03/10/2026" → DD/MM/AAAA; "MM/AAAA"); ano sozinho → só o ano.',
+    '- Texto livre: em primeira pessoa, natural, sem dizer que é IA, respeitando o limite de caracteres.',
+    '- Raça/cor, gênero, orientação, deficiência e dados pessoais (CPF, RG, endereço, nascimento): NÃO responda (deixe de fora).',
+    '- Sem informação verdadeira para um campo: deixe de fora.',
+    'Responda SOMENTE um JSON no formato {"<id>": "<resposta>", ...}.',
+    `DADOS DO CANDIDATO\n${descreverCandidato(contexto)}`,
+    `VAGA: ${vaga?.titulo || ''} — ${vaga?.empresa || ''}\n${String(vaga?.descricao || '').slice(0, 1500)}`,
+    `CAMPOS DESTA ETAPA\n${JSON.stringify(lista).slice(0, 14000)}`,
+  ].join('\n\n');
+  try {
+    const r = JSON.parse((await chamar(prompt, { temperatura: 0.2, json: true, fetchFn })).replace(/^```(json)?|```$/g, '').trim());
+    const ids = new Set(campos.map((c) => String(c.id)));
+    return Object.fromEntries(Object.entries(r || {}).filter(([id, v]) => ids.has(String(id)) && v != null && String(v).trim() && !String(v).includes(SEM_RESPOSTA))
+      .map(([id, v]) => [String(id), String(v).trim()]));
+  } catch { return {}; }
+}
+
 const SITUACOES = ['recebida', 'em_analise', 'avancou', 'teste', 'entrevista', 'proposta', 'aprovado', 'reprovado', 'outro'];
 
 // Diz se o e-mail é sobre um processo seletivo do candidato e em que etapa está; null se não for
@@ -245,4 +286,4 @@ async function entenderEmailProcesso({ assunto, de, texto, links = [], data }, {
   } catch { return null; }
 }
 
-module.exports = { responder, escolherBotao, aproveitarResposta, mesmaPergunta, escolherHabilidades, completarVagasEmail, planejarTela, entenderEmailProcesso, SITUACOES, chamar, disponivel, montarPrompt, descreverCandidato, SEM_RESPOSTA, BOTAO_PROIBIDO };
+module.exports = { responder, escolherBotao, aproveitarResposta, mesmaPergunta, planejarFormulario, escolherHabilidades, completarVagasEmail, planejarTela, entenderEmailProcesso, SITUACOES, chamar, disponivel, montarPrompt, descreverCandidato, SEM_RESPOSTA, BOTAO_PROIBIDO };

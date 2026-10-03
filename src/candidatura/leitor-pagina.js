@@ -89,7 +89,7 @@ function lerCampos() {
           return;
         }
         if (no.nodeType !== 1 && no.nodeType !== 11) return;
-        if (no.nodeType === 1 && /^(SCRIPT|STYLE|NOSCRIPT|OPTION)$/.test(no.tagName)) return;
+        if (no.nodeType === 1 && (/^(SCRIPT|STYLE|NOSCRIPT|OPTION)$/.test(no.tagName) || no.id === 'rota-aviso')) return;
         if (no.shadowRoot) visitar(no.shadowRoot);
         for (const f of no.childNodes) visitar(f);
       };

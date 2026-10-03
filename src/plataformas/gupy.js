@@ -7,6 +7,7 @@ const path = require('path');
 const { abrirNavegador, pausa, digitar, lerPagina, definirVelocidade } = require('../navegador/navegador');
 const { lerCampos, acharBotao, temDesafio, botaoDesativado } = require('../candidatura/leitor-pagina');
 const secoes = require('../candidatura/secoes');
+const { avisar } = require('../navegador/aviso');
 const { decidir, norm, CURRICULO, detectarPessoal, escolherOpcao } = require('../candidatura/respostas');
 const { dataLocal } = require('../util/tempo');
 const aprendizado = require('../candidatura/aprendizado');
@@ -654,7 +655,7 @@ async function ajudaDaIA(pagina, situacao, vaga, ctx) {
 
 // plataforma: 'gupy' ou 'sites'
 // aoTravar: se a candidatura não terminar, recebe a janela aberta (você termina e o robô observa)
-async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma = 'gupy', aoTravar } = {}) {
+async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, plataforma = 'gupy', aoTravar } = {}) {
   const ehGupy = plataforma === 'gupy';
   definirVelocidade(ctx.config?.velocidade);
   const memoria = aprendizado.carregar();
@@ -823,7 +824,15 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
 
       const faltando = []; // preenche o resto e lista todas no fim
       const pendentes = []; // as que dá para responder pelo painel
+      await avisar(pagina, 'trabalhando');
       const separaNome = campos.some((c) => /sobrenome|last ?name|surname|family name/i.test(c.rotulo || ''));
+      // A IA lê a etapa inteira de uma vez e relaciona cada pergunta com os seus dados.
+      // As regras (dados pessoais, diversidade, termos, respostas suas) continuam valendo antes dela.
+      const paraPlano = campos.filter((c) => !c.preenchido && c.rotulo && !c.autopreencher && !['arquivo', 'checkbox'].includes(c.tipo));
+      const fazerPlano = planoFn || (!iaFn && ia.disponivel() ? ia.planejarFormulario : null);
+      const plano = paraPlano.length && fazerPlano
+        ? await fazerPlano({ campos: paraPlano, vaga, contexto: { perfil: ctx.perfil, listas: ctx.listas, respostasFixas: ctx.respostasFixas, textosTreino: memoria.textos || [], respondidas: ctx.respondidas || [] } }).catch(() => ({}))
+        : {};
       for (const campo of campos) {
         if (campo.preenchido || campo.autopreencher) continue;
         if (!campo.rotulo) {
@@ -840,7 +849,7 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, plataforma 
           const opcoes = await lerOpcoesLista(pagina, campo);
           if (opcoes.length) Object.assign(campo, { tipo: 'combobox', opcoes });
         }
-        const decisao = await decidir(campo, { ...ctx, vaga, separaNome, aprendidas: memoria.respostas, textosTreino: memoria.textos || [], ...(iaFn ? { iaFn } : {}) });
+        const decisao = await decidir(campo, { ...ctx, vaga, separaNome, plano, aprendidas: memoria.respostas, textosTreino: memoria.textos || [], ...(iaFn ? { iaFn } : {}) });
         if (!decisao) {
           if (campo.tipo === 'arquivo' && CURRICULO.test(norm(campo.rotulo))) {
             return fim('erro', `A vaga pede o currículo, mas não achei o arquivo em "${ctx.perfil.curriculo_arquivo || '(vazio)'}". Confira o caminho em Perfil > Arquivo do currículo.`);

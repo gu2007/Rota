@@ -6,6 +6,7 @@ const { lerCampos } = require('./leitor-pagina');
 const aprendizado = require('./aprendizado');
 const { mascarar } = require('../navegador/gravador');
 const { detectarPessoal } = require('./respostas');
+const { avisar } = require('../navegador/aviso');
 
 const SUCESSO = /candidatura (enviada|realizada|conclu[ií]da|finalizada)|parab[eé]ns|inscri[cç][aã]o (realizada|conclu[ií]da)|application (submitted|received|sent)|thank you for applying|obrigad[oa] (por|pela) (se candidatar|candidatura|sua candidatura)/i;
 
@@ -47,6 +48,10 @@ async function observar(contexto, pagina, { log = console.log, salvarPessoais } 
   const finais = new Map();   // último valor visto de cada pergunta
 
   for (const c of await lerValores(pagina)) iniciais.set(chaveDe(c), c.valor);
+  // deixa claro que é a sua vez: faixa laranja, janela na frente e um bipe no terminal
+  await pagina.bringToFront().catch(() => {});
+  await avisar(pagina, 'ajuda');
+  process.stdout.write('\x07');
 
   await contexto.exposeBinding('rotaObservar', async ({ page }, ev) => {
     const evento = { ...ev, em: new Date().toISOString() };
@@ -79,6 +84,7 @@ async function observar(contexto, pagina, { log = console.log, salvarPessoais } 
   let enviada = false;
   while (aberto && Date.now() < limite) {
     for (const p of contexto.pages()) {
+      await avisar(p, enviada ? 'enviada' : 'ajuda'); // a faixa some quando a página troca
       for (const c of await lerValores(p)) if (!vazio(c.valor)) finais.set(chaveDe(c), c);
       if (!enviada && SUCESSO.test(await p.innerText('body').catch(() => ''))) {
         enviada = true;

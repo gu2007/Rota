@@ -190,7 +190,7 @@ async function decidir(campo, ctx) {
   return parteDaData(campo, await decidirBase(campo, ctx));
 }
 
-async function decidirBase(campo, { perfil: perfilBase, listas, respostasFixas, vaga, pessoais = {}, aprendidas = {}, textosTreino = [], respondidas = [], separaNome = false, iaFn = ia.responder, equivFn = ia.mesmaPergunta }) {
+async function decidirBase(campo, { perfil: perfilBase, listas, respostasFixas, vaga, pessoais = {}, aprendidas = {}, textosTreino = [], respondidas = [], separaNome = false, iaFn = ia.responder, equivFn = ia.mesmaPergunta, plano = {} }) {
   const partes = String(perfilBase?.nome || '').trim().split(/\s+/);
   const perfil = { ...perfilBase, primeiro_nome: partes[0] || '', sobrenome: partes.slice(1).join(' ') };
   if (separaNome) perfil.nome = perfil.primeiro_nome; // ao lado de "Sobrenome", só o primeiro nome
@@ -219,7 +219,9 @@ async function decidirBase(campo, { perfil: perfilBase, listas, respostasFixas, 
   if (campo.codigoPais && !ehEscolha(campo)) return { valor: 'Brasil', fonte: 'regra' };
 
   // Pelo tipo do input: type="tel" é telefone mesmo com rótulo como "BR+55"
-  if (campo.tipo === 'texto' && campo.html === 'tel' && !/cep|cpf/.test(rotulo)) {
+  // (campo "tel" também é usado para datas e números com máscara: só vale se falar de telefone ou não disser nada)
+  if (campo.tipo === 'texto' && campo.html === 'tel' && !/cep|cpf/.test(rotulo)
+    && (/telefone|celular|whats|phone|mobile|contato|fone/.test(rotulo) || rotulo.length < 3)) {
     return perfil.telefone ? { valor: perfil.telefone, fonte: 'perfil' } : null;
   }
   if (campo.tipo === 'texto' && campo.html === 'email') {
@@ -378,6 +380,18 @@ async function decidirBase(campo, { perfil: perfilBase, listas, respostasFixas, 
   if (ehEscolha(campo) || (campo.tipo === 'texto' && rotulo.length < 200)) {
     const eq = await respostaEquivalente(campo, { aprendidas, respondidas, respostasFixas, equivFn });
     if (eq) return eq;
+  }
+
+  // Plano da IA para a etapa inteira (ela viu todos os campos e os seus dados de uma vez)
+  const doPlano = plano[String(campo.id)];
+  if (doPlano) {
+    if (ehEscolha(campo)) {
+      const opcao = escolherOpcao(campo.opcoes || [], doPlano);
+      if (opcao && norm(opcao) === norm(doPlano)) return { valor: opcao, fonte: 'ia-etapa' };
+      if (opcao && campo.opcoes?.length) return { valor: opcao, fonte: 'ia-etapa' };
+    } else if (campo.tipo === 'texto' || campo.tipo === 'textarea') {
+      return { valor: cortarNoLimite(doPlano, campo.limite, campo.limitePalavras), fonte: 'ia-etapa' };
+    }
   }
 
   if (ehEscolha(campo)) {
