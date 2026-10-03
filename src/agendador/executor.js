@@ -7,6 +7,7 @@ const { dataLocal, horarioLocal, fimDoDia, MINUTO } = require('../util/tempo');
 const { normalizarUrl, detectarPlataformaEnvio } = require('../util/url');
 const { pontuar } = require('../ia/pontuador');
 const { observar } = require('../candidatura/observador');
+const { jaCandidatada } = require('./repetidas');
 const { ModuloPendente } = require('../plataformas/base');
 const modulosPadrao = require('../plataformas');
 const { LISTAS } = require('../db/modelo');
@@ -131,6 +132,12 @@ function criarExecutor(repo, { intervaloMs = 30 * 1000, modulos = modulosPadrao 
       return;
     }
 
+    const repetida = await jaCandidatada(repo, vaga);
+    if (repetida) {
+      await repo.vagas.atualizar(vaga.id, { status: 'descartada', motivo_status: `Você já se candidatou a esta vaga (#${repetida.id})` });
+      await repo.agenda.marcar(item.id, 'ignorado', 'vaga repetida');
+      return;
+    }
     // janela visível: se travar, fica aberta com o aviso de ajuda para você terminar (o Rota só observa)
     let observado = null;
     const aoTravar = process.env.NAVEGADOR_OCULTO === 'true' ? undefined : async ({ contexto, pagina, resultado }) => {
@@ -146,7 +153,7 @@ function criarExecutor(repo, { intervaloMs = 30 * 1000, modulos = modulosPadrao 
     });
 
     const aguardando = await guardarPendentes(repo, vaga, r);
-    const statusVaga = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { enviada: 'candidatada', simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', descartada: 'descartada' }[r.resultado];
+    const statusVaga = /já se candidatou/i.test(r.motivo || '') ? 'candidatada' : aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { enviada: 'candidatada', simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', descartada: 'descartada' }[r.resultado];
     await repo.vagas.atualizar(vaga.id, { status: statusVaga, motivo_status: aguardando || r.motivo || null });
     await repo.agenda.marcar(item.id, 'executado', r.resultado);
 

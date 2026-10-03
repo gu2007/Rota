@@ -19,6 +19,7 @@ const infojobsBusca = require('../src/coleta/infojobs-busca');
 const webBusca = require('../src/coleta/web-busca');
 const { observar } = require('../src/candidatura/observador');
 const ia = require('../src/ia/gemini');
+const { jaCandidatada } = require('../src/agendador/repetidas');
 
 const ARQUIVO_ESTADO = path.join(__dirname, '..', 'dados', 'rodar-estado.json');
 const MINUTO = 60 * 1000;
@@ -135,6 +136,12 @@ async function main() {
     const plataforma = vaga._plataforma;
     console.log(`\n  ${hora()} >> Candidatura ${ctx.config.modoTeste ? '(teste)' : 'DE VERDADE'}: ${vaga.titulo} — ${vaga.empresa || ''} [nota ${vaga.nota}]`);
     console.log(`     ${vaga.url_candidatura || vaga.url}`);
+    const repetida = await jaCandidatada(repo, vaga);
+    if (repetida) {
+      await repo.vagas.atualizar(vaga.id, { status: 'descartada', motivo_status: `Você já se candidatou a esta vaga (#${repetida.id})` });
+      console.log(`     = REPETIDA — você já se candidatou a ela (#${repetida.id}). Pulando.`);
+      return { resultado: 'descartada' };
+    }
     let observado = null;
     const aoTravar = process.env.NAVEGADOR_OCULTO === 'true' ? undefined : async ({ contexto, pagina, resultado }) => {
       console.log(`\n     O Rota travou: ${String(resultado.motivo || resultado.resultado).slice(0, 200)}`);
@@ -149,8 +156,9 @@ async function main() {
       await repo.candidaturas.registrar({ vaga_id: vaga.id, plataforma, resultado: r.resultado, modo_teste: ctx.config.modoTeste && !observado?.enviada, motivo: r.motivo, respostas: r.respostas });
     }
     const aguardando = await guardarPendentes(repo, vaga, r);
-    const status = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', enviada: 'candidatada', descartada: 'descartada' }[r.resultado];
+    const status = /já se candidatou/i.test(r.motivo || '') ? 'candidatada' : aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', enviada: 'candidatada', descartada: 'descartada' }[r.resultado];
     await repo.vagas.atualizar(vaga.id, { status, motivo_status: aguardando || r.motivo || null });
+    if (r.resolvidoPor === 'agente') console.log('     (as regras travaram e o agente de IA terminou)');
     console.log(`     = ${r.resultado.toUpperCase()}${r.motivo ? ` — ${String(r.motivo).slice(0, 220)}` : ''}`);
     return r;
   }

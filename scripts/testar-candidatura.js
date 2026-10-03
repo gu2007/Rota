@@ -10,6 +10,7 @@ const modulos = require('../src/plataformas');
 const ia = require('../src/ia/gemini');
 const { normalizarUrl } = require('../src/util/url');
 const { observar } = require('../src/candidatura/observador');
+const { jaCandidatada } = require('../src/agendador/repetidas');
 
 async function main() {
   const repo = require('../src/db').repo();
@@ -93,11 +94,15 @@ async function main() {
     observado = await observar(contexto, pagina, { log: (m) => console.log(m), salvarPessoais: (p) => repo.pessoais.salvar(p) });
     return observado;
   } : undefined;
-  const r = await modulos[plataforma].candidatar(vaga, ctx, { aoTravar });
+  const repetida = !link && await jaCandidatada(repo, vaga);
+  const r = repetida
+    ? { resultado: 'descartada', motivo: `Você já se candidatou a esta vaga (#${repetida.id})`, respostas: [] }
+    : await modulos[plataforma].candidatar(vaga, ctx, { aoTravar });
+  if (r.resolvidoPor === 'agente') console.log('   (as regras travaram e o agente de IA terminou)');
   // descartada (não é de TI): nem chegou a tentar, então não entra no histórico de candidaturas
   if (r.resultado !== 'descartada') await repo.candidaturas.registrar({ vaga_id: vaga.id, plataforma, resultado: r.resultado, modo_teste: !enviar, motivo: r.motivo, respostas: r.respostas });
   const aguardando = await guardarPendentes(repo, vaga, r);
-  const status = aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', enviada: 'candidatada', descartada: 'descartada' }[r.resultado];
+  const status = /já se candidatou/i.test(r.motivo || '') && r.resultado !== 'descartada' ? 'candidatada' : aguardando ? 'aguardando' : r.paraVoce ? 'para_voce' : { simulada: 'testada', pulada: 'pulada', erro: 'erro', captcha: 'na_fila', enviada: 'candidatada', descartada: 'descartada' }[r.resultado];
   await repo.vagas.atualizar(vaga.id, { status, motivo_status: aguardando || r.motivo || null });
   if (r.resultado === 'descartada' && !link) {
     console.log(`3) Descartada — ${r.motivo}\n`);

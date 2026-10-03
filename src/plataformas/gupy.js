@@ -688,7 +688,8 @@ async function ajudaDaIA(pagina, situacao, vaga, ctx) {
 // plataforma: 'gupy' ou 'sites'
 // aoTravar: se a candidatura não terminar, recebe a janela aberta (você termina e o robô observa)
 // conferirFn: confere se a vaga é de TI antes de preencher (padrão: regras + IA; nos testes com iaFn, desligado)
-async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, plataforma = 'gupy', aoTravar, conferirFn } = {}) {
+// agenteFn: agente de IA que tenta terminar quando as regras travam (padrão: ligado se houver GEMINI_API_KEY; nos testes com iaFn, desligado)
+async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, plataforma = 'gupy', aoTravar, conferirFn, agenteFn } = {}) {
   const ehGupy = plataforma === 'gupy';
   definirVelocidade(ctx.config?.velocidade);
   const memoria = aprendizado.carregar();
@@ -717,13 +718,15 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
     if (extra) fs.writeFileSync(`${base}.json`, JSON.stringify(extra, null, 2));
   };
   // "return fim(...)" sem await: o finally roda antes do print terminar, então "ultimo" é marcado já no começo
+  // o objeto devolvido é o próprio "ultimo": se o agente de IA terminar a candidatura no finally, o resultado muda junto
   const fim = async (resultado, motivo, nome = resultado) => {
-    ultimo = { resultado, motivo };
+    const obj = { resultado, motivo, respostas, pasta, resolvidoPor: 'regras' };
+    ultimo = obj;
     await registrar(nome, { resultado, motivo, url: pagina?.url(), respostas });
-    return { resultado, motivo, respostas, pasta };
+    return obj;
   };
   // site que pede conta ou tem CAPTCHA: vai para a aba "Para você"
-  const comVoce = async (motivo) => ({ ...(await fim('pulada', motivo)), paraVoce: true });
+  const comVoce = async (motivo) => { const p = fim('pulada', motivo); ultimo.paraVoce = true; return p; };
   const hostVaga = (() => { try { return new URL(vaga.url_candidatura || vaga.url).hostname; } catch { return 'site'; } })();
 
   const nav = await abrir();
@@ -755,6 +758,11 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
     const desafio = await pagina.evaluate(temDesafio);
     if (desafio) return ehGupy ? fim('captcha', `Verificação anti-robô na página da vaga (${desafio})`) : comVoce(`O site ${hostVaga} tem verificação anti-robô: essa candidatura é com você`);
     if (JA_CANDIDATADO.test(await pagina.innerText('body'))) return fim('pulada', 'Você já se candidatou a esta vaga');
+    // a Gupy troca o botão "Candidatar-se" por "Candidatura enviada"/"Acompanhar candidatura"
+    const jaFoi = await pagina.evaluate(() => [...document.querySelectorAll('button, a, [role=button], span, div')]
+      .some((e) => e.children.length <= 2 && e.getBoundingClientRect().width > 0
+        && /^(candidatura enviada|acompanhar( minha| sua)? candidatura|ver( minha| sua)? candidatura|j[aá] candidatad[oa]|voc[eê] se candidatou|applied|application sent)$/i.test((e.innerText || '').replace(/\s+/g, ' ').trim()))).catch(() => false);
+    if (jaFoi) return fim('pulada', 'Você já se candidatou a esta vaga (a página mostra a candidatura enviada)');
     // última barreira: só se candidata a vaga de tecnologia
     const conferir = conferirFn || (iaFn ? null : conferirArea);
     if (lerAntes && conferir) {
@@ -1002,7 +1010,8 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
       }
       if (faltando.length) {
         const r = await fim('pulada', `Pergunta${faltando.length > 1 ? 's' : ''} obrigatória${faltando.length > 1 ? 's' : ''} sem resposta verdadeira: ${faltando.join('; ')}`);
-        return { ...r, pendentes };
+        r.pendentes = pendentes;
+        return r;
       }
 
       // mesma tela e mesmos campos: o clique anterior não avançou (algum campo recusado)
@@ -1020,7 +1029,8 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
           const novas = ag.perguntas.filter((p) => !detectarPessoal(p.pergunta));
           if (novas.length) {
             const r = await fim('pulada', `Campos que só você sabe responder: ${novas.map((p) => `"${p.pergunta.slice(0, 100)}"`).join('; ')}`);
-            return { ...r, pendentes: novas };
+            r.pendentes = novas;
+            return r;
           }
         }
         if (ag.agiu) { assinaturaAnterior = null; etapa--; continue; }
@@ -1110,7 +1120,33 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
     return fim('erro', e.message.split('\n')[0].slice(0, 300), 'excecao');
   } finally {
     await pausa(300, 600);
-    if (aoTravar && ['erro', 'pulada'].includes(ultimo?.resultado)) {
+    // 1º o agente de IA tenta terminar; só se ele também travar é que chama você
+    const agente = agenteFn || (!iaFn && ia.disponivel() && process.env.ROTA_AGENTE !== 'false' ? require('../agente/agente').agir : null);
+    const naoAdianta = /anti-rob|captcha|já se candidatou|janela fechou|Mais de \d+ etapas|net::ERR_|page\.goto/i;
+    if (agente && ['erro', 'pulada'].includes(ultimo?.resultado) && !naoAdianta.test(ultimo.motivo || '')) {
+      try {
+        const viva = pagina && !pagina.isClosed() ? pagina : nav.contexto.pages().at(-1);
+        await avisar(viva, 'trabalhando').catch(() => {});
+        await ctx.log?.('info', 'agente', `As regras travaram (${String(ultimo.motivo).slice(0, 120)}). O agente de IA vai tentar terminar.`);
+        const ag = await agente({ pagina: viva, contexto: nav.contexto, ctx: { ...ctx, aprendidas: Object.values(memoria.respostas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) })) }, vaga, preencherFn: preencher, log: ctx.log || (async () => {}) });
+        respostas.push(...(ag.respostas || []));
+        await ctx.log?.('info', 'agente', `Agente: ${ag.resultado} — ${ag.motivo} (${ag.passos} passos)`);
+        if (['simulada', 'enviada', 'ja_candidatado'].includes(ag.resultado)) {
+          Object.assign(ultimo, {
+            resultado: ag.resultado === 'ja_candidatado' ? 'pulada' : ag.resultado, motivo: ag.motivo,
+            paraVoce: false, pendentes: [], resolvidoPor: 'agente',
+          });
+          pagina = viva;
+          await registrar(`agente-${ag.resultado}`, { resultado: ag.resultado, motivo: ag.motivo, url: viva.url(), respostas });
+        } else {
+          ultimo.motivo = `${ultimo.motivo} | Agente de IA: ${ag.motivo}`;
+          pagina = viva;
+        }
+      } catch (e) {
+        ultimo.motivo = `${ultimo.motivo} | Agente de IA deu erro: ${e.message.split('\n')[0].slice(0, 150)}`;
+      }
+    }
+    if (aoTravar && ['erro', 'pulada'].includes(ultimo?.resultado) && !/já se candidatou/i.test(ultimo.motivo || '')) {
       ultimo.observado = await aoTravar({ contexto: nav.contexto, pagina, resultado: ultimo }).catch(() => null);
     }
     await pausa(1500, 3000);

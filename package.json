@@ -35,7 +35,8 @@
     "rodar": "node scripts/rodar.js",
     "login:salvar": "node scripts/login.js salvar",
     "login:listar": "node scripts/login.js listar",
-    "login:remover": "node scripts/login.js remover"
+    "login:remover": "node scripts/login.js remover",
+    "piloto": "node scripts/piloto.js"
   },
   "engines": {
     "node": ">=18"
