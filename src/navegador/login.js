@@ -68,7 +68,10 @@ async function entrarComSenha(pagina, cred) {
     if (await pagina.evaluate(temDesafio).catch(() => null)) return { ok: false, motivo: 'o site pediu verificação anti-robô (CAPTCHA) no login' };
     if (!(await visivel(pagina.locator('input[type=password]')))) return { ok: true };
   }
-  return { ok: false, motivo: 'cliquei em Entrar, mas a tela de login não saiu' };
+  const aviso = await pagina.evaluate(() => [...document.querySelectorAll('[role=alert], [class*=error i], [class*=erro i], [class*=invalid i], .validation-summary-errors, .field-validation-error')]
+    .map((e) => (e.innerText || '').trim()).filter(Boolean).join(' | ').slice(0, 200)).catch(() => '');
+  const captcha = await pagina.locator('iframe[src*=recaptcha], iframe[src*=hcaptcha], iframe[src*=turnstile]').count().catch(() => 0);
+  return { ok: false, motivo: `cliquei em Entrar, mas a tela de login não saiu${aviso ? ` (a página diz: ${aviso})` : ''}${captcha ? ' (tem CAPTCHA na tela)' : ''}` };
 }
 
 module.exports = { entrarComSenha };

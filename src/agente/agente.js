@@ -42,6 +42,9 @@ function lerBotoes() {
   return { botoes: lista, erros: [...new Set(erros)].slice(0, 8), texto, url: location.href, titulo: document.title };
 }
 
+const temBotaoLinkedin = (pagina) => pagina.evaluate(() => [...document.querySelectorAll('button, a, [role=button]')]
+  .some((e) => e.getBoundingClientRect().width > 0 && /^(entrar com |continuar com |sign in with |login com )?linkedin$/i.test((e.innerText || e.getAttribute('aria-label') || '').trim()))).catch(() => false);
+
 function curriculo(perfil) {
   const doPerfil = String(perfil?.curriculo_arquivo || '').replace(/["']/g, '').trim();
   if (doPerfil && fs.existsSync(doPerfil)) return doPerfil;
@@ -84,7 +87,8 @@ function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, mo
     '- Dados de contato e documentos: escreva o MARCADOR (ex.: {{email}}, {{telefone}}, {{cpf}}) e o sistema troca pelo valor real. Marcadores disponíveis: ' + marcadores.join(', ') + '.',
     '- Raça/cor, gênero, orientação, deficiência: se houver opção "Prefiro não responder/informar", use-a; senão use a resposta cadastrada pelo candidato; se não houver, peça ajuda.',
     '- Campo de arquivo de currículo: ação "preencher" com valor "{{curriculo}}".',
-    '- Tela de login com e-mail e senha: ação "login" (o sistema digita o e-mail e a senha salvos). ' + (temLogin ? 'Existe login salvo para este site.' : 'NÃO existe login salvo para este site.'),
+    '- Tela de login com botão do LinkedIn: SEMPRE ação "login_social" (o candidato entra pelo LinkedIn), mesmo que também tenha e-mail e senha.',
+    '- Tela de login com e-mail e senha, sem LinkedIn: ação "login" (o sistema digita o e-mail e a senha salvos). ' + (temLogin ? 'Existe login salvo para este site.' : 'NÃO existe login salvo para este site.'),
     '- Tela de login com botão "Entrar com LinkedIn" ou "Google" (ex.: Gupy): ação "login_social" (o sistema faz). Sem login salvo e sem botão social: status "ajuda".',
     '- NUNCA crie conta, nunca clique em cadastrar-se/criar conta, nunca resolva CAPTCHA ("não sou robô"): nesses casos, status "ajuda".',
     '- Teste de perfil, jogo, teste comportamental ou técnico: status "ajuda".',
@@ -209,6 +213,13 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
             if (SUCESSO.test(await pagina.innerText('body').catch(() => ''))) return { resultado: 'enviada', motivo: 'o agente de IA enviou a candidatura', respostas, passos: passo };
           }
           break; // depois de um clique a tela muda: olha de novo antes de seguir
+        } else if (acao === 'login' && loginSocialFn && await temBotaoLinkedin(pagina)) {
+          // tem LinkedIn na tela: entra por ele (pedido do Gustavo)
+          const r = await loginSocialFn(pagina);
+          historico.push(r.ok ? '- entrei pelo LinkedIn' : `- login pelo LinkedIn falhou: ${r.motivo}`);
+          if (!r.ok) return { resultado: 'pulada', motivo: `login pelo LinkedIn: ${r.motivo}`, respostas, passos: passo };
+          if (pagina.isClosed()) pagina = contexto.pages().at(-1);
+          break;
         } else if (acao === 'login') {
           const cred = logins.obter(pagina.url());
           if (!cred) return { resultado: 'pulada', motivo: `o site pede login e não há login salvo para ${new URL(pagina.url()).hostname} (npm run login:salvar)`, respostas, passos: passo };

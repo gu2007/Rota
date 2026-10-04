@@ -369,7 +369,7 @@ async function fazerLogin(pagina) {
   if (provedor === 'nenhum') return { ok: false, motivo: 'A Gupy pediu login (GUPY_LOGIN=nenhum no .env).' };
 
   const botao = await acharBotaoProvedor(pagina, provedor);
-  if (!botao) return { ok: false, motivo: `A Gupy pediu login e não achei o botão "${provedor}". Veja o JSON "tela-de-login" na pasta de prints.` };
+  if (!botao) return { ok: false, motivo: `O site pediu login e não achei o botão "${provedor}".` };
 
   await pausa(800, 2000);
   await botao.scrollIntoViewIfNeeded().catch(() => {});
@@ -396,7 +396,7 @@ async function fazerLogin(pagina) {
       }
     }
   }
-  return { ok: false, motivo: `Fui para o ${provedor} e não voltei para a Gupy em 45s. Veja o último print para saber o que ele pediu.` };
+  return { ok: false, motivo: `Fui para o ${provedor} e não voltei para o site em 45s. Veja o último print para saber o que ele pediu.` };
 }
 
 // habilidades destacadas
@@ -819,6 +819,22 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
       if (await naTelaDeLogin(pagina)) {
         // site de empresa/InfoJobs: entra com o login salvo (npm run login:salvar); o Rota nunca cria conta
         if (!ehGupy) {
+          const comLinkedin = await pagina.evaluate(() => [...document.querySelectorAll('button, a, [role=button]')]
+            .some((e) => e.getBoundingClientRect().width > 0 && /^(entrar com |continuar com |sign in with |login com )?linkedin$/i.test((e.innerText || e.getAttribute('aria-label') || '').trim()))).catch(() => false);
+          if (comLinkedin && loginsFeitos < 2) {
+            loginsFeitos++;
+            await ctx.log?.('info', 'gupy', `Entrando em ${hostVaga} pelo LinkedIn...`);
+            const r = await fazerLogin(pagina);
+            if (!r.ok) return comVoce(`Não consegui entrar em ${hostVaga} pelo LinkedIn: ${r.motivo}`);
+            await esperarPagina(pagina);
+            const temForm = (await pagina.evaluate(lerCampos).catch(() => [])).some((c) => !c.preenchido && c.rotulo && !/senha|password/i.test(c.rotulo));
+            if (!temForm && !(await pagina.evaluate(acharBotao, botoes.proximo).catch(() => null))) {
+              const parada4 = await abrirVaga(false);
+              if (parada4) return parada4;
+            }
+            etapa--;
+            continue;
+          }
           const cred = logins.obter(pagina.url()) || logins.obter(hostVaga);
           if (!cred) return comVoce(`O site ${hostVaga} pede login. Salve o seu login dele com "npm run login:salvar" (ou entre você mesmo nessa janela)`);
           if (loginsFeitos >= 2) return comVoce(`O site ${hostVaga} pediu login de novo depois de entrar: termine você nessa janela`);

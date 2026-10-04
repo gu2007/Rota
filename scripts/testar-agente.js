@@ -3,6 +3,7 @@
 // e lista tudo o que ele preencheu, para você conferir se acertou.
 //   npm run testar:agente              -> 1 vaga da Gupy, do InfoJobs, da Catho e de site de empresa
 //   npm run testar:agente 439 212      -> essas vagas (pelo número)
+//   npm run testar:agente infojobs     -> só uma vaga do InfoJobs
 const fs = require('fs');
 const path = require('path');
 const { ambiente, lerConfiguracoes } = require('../src/config');
@@ -14,6 +15,8 @@ const aprendizado = require('../src/candidatura/aprendizado');
 const gupy = require('../src/plataformas/gupy');
 const { agir } = require('../src/agente/agente');
 const ia = require('../src/ia/gemini');
+const { conferirArea } = require('../src/ia/conferir-area');
+const { areaPorRegras } = require('../src/ia/pontuador');
 
 const GRUPOS = [
   { nome: 'Gupy', filtro: (v) => v.plataforma_envio === 'gupy' },
@@ -47,8 +50,10 @@ async function main() {
   } else {
     const todas = [];
     for (const status of ['na_fila', 'testada', 'erro', 'pulada', 'aguardando', 'para_voce']) todas.push(...await repo.vagas.listar({ status, limite: 1000 }));
-    for (const g of GRUPOS) {
-      const v = todas.filter((x) => g.filtro(x) && !NAO_SERVE.test(x.motivo_status || '') && (x.nota ?? 0) >= config.notaMinima)
+    // npm run testar:agente infojobs -> só essa plataforma
+    const nomes = process.argv.slice(2).filter((x) => /^[a-z]/i.test(x)).map((x) => x.toLowerCase());
+    for (const g of GRUPOS.filter((x) => !nomes.length || nomes.some((n) => x.nome.toLowerCase().startsWith(n)))) {
+      const v = todas.filter((x) => g.filtro(x) && !NAO_SERVE.test(x.motivo_status || '') && (x.nota ?? 0) >= config.notaMinima && !/fora de TI/.test(areaPorRegras(x).motivo))
         .sort((a, b) => (a.status === 'na_fila' ? 0 : 1) - (b.status === 'na_fila' ? 0 : 1) || b.id - a.id)[0];
       if (v) escolhidas.push({ grupo: g.nome, vaga: await repo.vagas.obter(v.id) });
       else console.log(`  ${g.nome}: nenhuma vaga de TI na fila para testar (rode npm run rodar um tempo para achar).`);
@@ -69,6 +74,9 @@ async function main() {
       await nav.pagina.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
       await pausa(2500, 4000);
       await aceitarCookies(nav.pagina);
+      const descricao = String(vaga.descricao || '').length >= 400 ? vaga.descricao : (await nav.pagina.innerText('body').catch(() => '')).slice(0, 8000);
+      const area = await conferirArea({ ...vaga, descricao }, { config });
+      if (!area.ok) throw new Error(`pulei: ${area.motivo}`);
       r = await agir({
         pagina: nav.pagina, contexto: nav.contexto, ctx, vaga, preencherFn: gupy.preencher, log,
         inicio: true, pastaPrints, loginSocialFn: gupy.fazerLogin,
