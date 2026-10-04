@@ -16,6 +16,7 @@ const modulos = require('../src/plataformas');
 const indeed = require('../src/plataformas/indeed');
 const { abrirNavegador } = require('../src/navegador/navegador');
 const infojobsBusca = require('../src/coleta/infojobs-busca');
+const cathoBusca = require('../src/coleta/catho-busca');
 const webBusca = require('../src/coleta/web-busca');
 const { observar } = require('../src/candidatura/observador');
 const ia = require('../src/ia/gemini');
@@ -31,6 +32,7 @@ const FONTES = [
   { codigo: 'gupy_portal', nome: 'portal da Gupy', a_cada: 120 },
   { codigo: 'email', nome: 'Gmail', a_cada: 30 },
   { codigo: 'infojobs', nome: 'InfoJobs', a_cada: 180 },
+  { codigo: 'catho', nome: 'Catho', a_cada: 180 },
   { codigo: 'indeed', nome: 'Indeed', a_cada: 180 },
   { codigo: 'web', nome: 'internet (IA)', a_cada: 360 },
 ];
@@ -103,6 +105,12 @@ async function main() {
         const nav = await abrirNavegador();
         const cidade = String(config.localizacao || 'São Paulo').split(';')[0].split(',')[0].trim();
         try { return { vagas: await infojobsBusca.buscar(nav.pagina, { termos: config.termosBusca, maxDias: config.maxDias, cidade, log }), coleta: 'site' }; }
+        finally { await nav.fechar().catch(() => {}); }
+      }
+      case 'catho': {
+        const nav = await abrirNavegador();
+        const cidade = String(config.localizacao || 'São Paulo').split(';')[0].split(',')[0].trim();
+        try { return { vagas: await cathoBusca.buscar(nav.pagina, { termos: config.termosBusca, maxDias: config.maxDias, cidade, log }), coleta: 'site' }; }
         finally { await nav.fechar().catch(() => {}); }
       }
       case 'indeed': return { vagas: await indeed.coletar(ctx, { porVez: 0 }), coleta: 'site' };

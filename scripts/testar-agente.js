@@ -22,6 +22,8 @@ const { areaPorRegras } = require('../src/ia/pontuador');
 const { garantirLogins } = require('../src/navegador/sessoes');
 const infojobsBusca = require('../src/coleta/infojobs-busca');
 const linkedin = require('../src/plataformas/linkedin');
+const cathoBusca = require('../src/coleta/catho-busca');
+const portalGupy = require('../src/plataformas/portal-gupy');
 const { registrarVaga } = require('../src/agendador/executor');
 
 const GRUPOS = [
@@ -84,6 +86,22 @@ async function main() {
       console.log(`      ${achadas.length} vagas achadas, ${novas} novas. Abrindo as da fila para conferir (TI, cidade, nº de candidatos)...`);
       await linkedin.coletar({ repo, config, buscar: false, log: async (n, o, m) => { if (o === 'linkedin') console.log(`      ${m}`); } }, { porVez: 15 });
       console.log();
+    }
+    const quer = (nome) => !nomes.length || nomes.some((n) => nome.startsWith(n));
+    const gravar = async (achadas, origem) => { let novas = 0; for (const v of achadas) { const r = await registrarVaga(repo, v, { origem_plataforma: origem, origem_coleta: origem === 'gupy_portal' ? 'busca' : 'site' }).catch(() => ({})); if (r.nova) novas++; } return novas; };
+    if (quer('gupy')) {
+      console.log('  Buscando vagas novas no portal da Gupy...');
+      const achadas = await portalGupy.coletar({ config, log: async () => {} }).catch(() => []);
+      console.log(`      ${achadas.length} vagas achadas, ${await gravar(achadas, 'gupy_portal')} novas.\n`);
+    }
+    if (quer('catho')) {
+      console.log('  Buscando vagas novas na Catho (São Paulo)...');
+      const cidade = String(config.localizacao || 'São Paulo').split(';')[0].split(',')[0].trim();
+      const nav = await abrirNavegador();
+      try {
+        const achadas = await cathoBusca.buscar(nav.pagina, { termos: config.termosBusca, maxDias: Math.max(config.maxDias || 2, 7), cidade });
+        console.log(`      ${achadas.length} vagas achadas, ${await gravar(achadas, 'catho')} novas.\n`);
+      } finally { await nav.fechar().catch(() => {}); }
     }
     const todas = [];
     for (const status of ['na_fila', 'testada', 'erro', 'pulada', 'aguardando', 'para_voce']) todas.push(...await repo.vagas.listar({ status, limite: 1000 }));
