@@ -807,6 +807,10 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
       }
       aprendizado.anotarBotao('botoesCandidatar', escolha.texto);
     }
+    // Catho/InfoJobs logados enviam no primeiro clique: no modo teste para aqui
+    if (ctx.config?.modoTeste && /(^|\.)(catho\.com\.br|infojobs\.com\.br)$/.test(new URL(pagina.url()).hostname)) {
+      return fim('simulada', 'Modo teste: neste site o botão de candidatura já envia (um clique); parei antes dele');
+    }
     pagina = await clicarBotao(pagina, contexto);
     return null;
   };

@@ -17,6 +17,10 @@ const { pausa } = require('../navegador/navegador');
 const MAX_PASSOS = 30;
 const SUCESSO = /candidatura (enviada|realizada|conclu[ií]da|finalizada|recebida)|inscri[cç][aã]o (realizada|conclu[ií]da|enviada)|recebemos (a )?sua candidatura|obrigad[oa] (por se candidatar|pela (sua )?candidatura)|thank(s| you) for (your )?appl|application (submitted|received|sent)|we.?ve received your application/i;
 const FINAL = /^(enviar|finalizar|concluir|submit|send|confirmar)( a| minha)?( candidatura| inscri[cç][aã]o| application| aplica[cç][aã]o)?$|enviar candidatura|finalizar candidatura|finalizar inscri[cç][aã]o|submit application|send application/i;
+// Catho e InfoJobs, logados, enviam a candidatura no PRIMEIRO clique ("Quero me candidatar", "Candidatar-me",
+// "Envio Turbo"): nesses sites esse botão já é o envio final (no modo teste o Rota para antes dele)
+const UM_CLIQUE = /(^|\.)(catho\.com\.br|infojobs\.com\.br)$/;
+const BOTAO_CANDIDATAR = /candidat|inscrev|envio turbo|aplicar|apply/i;
 const PROIBIDO = /criar (uma |sua )?conta|create (an |your )?account|sign ?up|registre-se|registrar-se|cadastre-se|crie sua conta|excluir|apagar|remover candidatura|cancelar candidatura|desistir|sair da conta|logout|log out|denunciar/i;
 
 // roda na página: botões e links clicáveis, marcados com data-rota-ag
@@ -210,7 +214,8 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
             historico.push(`- NÃO cliquei em "${botao.texto}" (proibido: criar conta/sair/cancelar)`);
             continue;
           }
-          const final = objetivo !== 'login' && (a.final === true || FINAL.test(botao.texto));
+          const umClique = UM_CLIQUE.test(new URL(pagina.url()).hostname) && BOTAO_CANDIDATAR.test(botao.texto);
+          const final = objetivo !== 'login' && (a.final === true || FINAL.test(botao.texto) || umClique);
           if (final) {
             const vazios = await obrigatoriosVazios(pagina);
             if (vazios.length) { historico.push(`- NÃO enviei: ainda faltam obrigatórios: ${vazios.slice(0, 5).join(' | ')}`); break; }
