@@ -26,6 +26,7 @@ const { registrarVaga } = require('../src/agendador/executor');
 const GRUPOS = [
   // achada no LinkedIn, candidatura no site da empresa/Gupy (a Candidatura simplificada do LinkedIn fica de fora)
   { nome: 'LinkedIn', filtro: (v) => v.origem_plataforma === 'linkedin' && ['gupy', 'sites', 'infojobs'].includes(v.plataforma_envio) },
+  { nome: 'Easy Apply', filtro: (v) => v.plataforma_envio === 'linkedin_easy' || (v.status === 'para_voce' && /^Candidatura simplificada/.test(v.motivo_status || '')) },
   { nome: 'Gupy', filtro: (v) => v.plataforma_envio === 'gupy' },
   { nome: 'InfoJobs', filtro: (v) => v.plataforma_envio === 'infojobs' },
   { nome: 'Catho', filtro: (v) => /catho\.com/.test(v.url_candidatura || v.url) },

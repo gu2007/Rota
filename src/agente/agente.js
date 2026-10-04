@@ -45,6 +45,13 @@ function lerBotoes() {
 const temBotaoLinkedin = (pagina) => pagina.evaluate(() => [...document.querySelectorAll('button, a, [role=button]')]
   .some((e) => e.getBoundingClientRect().width > 0 && /^(entrar com |continuar com |sign in with |login com )?linkedin$/i.test((e.innerText || e.getAttribute('aria-label') || '').trim()))).catch(() => false);
 
+// obrigatórios ainda vazios na tela (lista de país ao lado do telefone não conta)
+async function obrigatoriosVazios(pagina) {
+  const campos = await pagina.evaluate(lerCampos).catch(() => []);
+  return campos.filter((c) => c.obrigatorio && !c.preenchido && c.rotulo && !c.autopreencher && !c.codigoPais
+    && !(c.tipo === 'combobox' && campos.some((o) => o !== c && o.rotulo === c.rotulo && o.preenchido))).map((c) => c.rotulo);
+}
+
 function curriculo(perfil) {
   const doPerfil = String(perfil?.curriculo_arquivo || '').replace(/["']/g, '').trim();
   if (doPerfil && fs.existsSync(doPerfil)) return doPerfil;
@@ -190,7 +197,7 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
           const campo = camposBrutos.find((c) => `c${c.id}` === a.id);
           if (!campo) { historico.push(`- preencher ${a.id}: campo não existe`); continue; }
           let valor = trocarMarcadores(a.valor, dados);
-          if (/\{\{/.test(valor)) { historico.push(`- preencher "${campo.rotulo}": não tenho esse dado (${a.valor})`); continue; }
+          if (/\{\{/.test(valor)) { historico.push(`- preencher "${campo.rotulo}": NÃO tenho esse dado (${a.valor}); se for obrigatório, peça ajuda`); continue; }
           if (campo.tipo === 'arquivo' && !fs.existsSync(valor)) { historico.push(`- currículo: arquivo não encontrado`); continue; }
           await preencherFn(pagina, campo, valor);
           const mostrado = detectarPessoal(campo.rotulo) ? '(dado pessoal)' : campo.tipo === 'arquivo' ? path.basename(valor) : valor;
@@ -204,6 +211,10 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
             continue;
           }
           const final = objetivo !== 'login' && (a.final === true || FINAL.test(botao.texto));
+          if (final) {
+            const vazios = await obrigatoriosVazios(pagina);
+            if (vazios.length) { historico.push(`- NÃO enviei: ainda faltam obrigatórios: ${vazios.slice(0, 5).join(' | ')}`); break; }
+          }
           if (final && modoTeste) return { resultado: 'simulada', motivo: `Modo teste: o agente de IA preencheu tudo e parou antes de "${botao.texto}"`, respostas, passos: passo };
           const abertas = new Set(contexto.pages());
           await pagina.locator(`[data-rota-ag="${a.id}"]`).first().click({ timeout: 8000 })
@@ -256,7 +267,11 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
     }
     if (status === 'ja_candidatado') return { resultado: 'ja_candidatado', motivo: 'Você já se candidatou a esta vaga (visto pelo agente de IA)', respostas, passos: passo };
     if (status === 'ajuda') return { resultado: 'pulada', motivo: `o agente de IA precisa de você: ${String(plano.motivo || '').slice(0, 250)}`, respostas, passos: passo };
-    if (status === 'pronto_para_enviar' && modoTeste) return { resultado: 'simulada', motivo: 'Modo teste: o agente de IA preencheu tudo e parou antes do envio', respostas, passos: passo };
+    if (status === 'pronto_para_enviar' && modoTeste) {
+      const vazios = await obrigatoriosVazios(pagina);
+      if (!vazios.length) return { resultado: 'simulada', motivo: 'Modo teste: o agente de IA preencheu tudo e parou antes do envio', respostas, passos: passo };
+      historico.push(`- ainda NÃO está pronto: obrigatórios vazios: ${vazios.slice(0, 5).join(' | ')}`);
+    }
     if (status === 'enviado' && !modoTeste) {
       if (SUCESSO.test(await pagina.innerText('body').catch(() => ''))) return { resultado: 'enviada', motivo: 'o agente de IA enviou a candidatura', respostas, passos: passo };
     }

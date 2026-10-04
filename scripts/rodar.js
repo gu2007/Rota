@@ -34,7 +34,7 @@ const FONTES = [
   { codigo: 'indeed', nome: 'Indeed', a_cada: 180 },
   { codigo: 'web', nome: 'internet (IA)', a_cada: 360 },
 ];
-const CANDIDATURA = ['sites', 'gupy', 'infojobs']; // onde o Rota consegue se candidatar
+const CANDIDATURA = ['sites', 'gupy', 'infojobs', 'linkedin_easy']; // onde o Rota consegue se candidatar
 const PAUSA_ENTRE = [2, 5];   // minutos entre uma candidatura e outra (parece gente, não robô)
 const ESPERA_FILA_VAZIA = 15; // minutos
 
@@ -153,6 +153,12 @@ async function main() {
       return observado;
     };
     const r = await modulos[plataforma].candidatar(vaga, ctx, { aoTravar });
+    if (r.adiar) { // limite diário (Easy Apply): a vaga volta para a fila e a plataforma descansa até amanhã
+      await repo.vagas.atualizar(vaga.id, { status: 'na_fila', motivo_status: r.motivo });
+      console.log(`     = ${r.motivo}`);
+      return r;
+    }
+    if (r.observado?.enviada) observado = r.observado;
     if (observado?.enviada) { r.resultado = 'enviada'; r.motivo = 'Enviada por você (o Rota observou)'; }
     if (r.resultado !== 'descartada') {
       await repo.candidaturas.registrar({ vaga_id: vaga.id, plataforma, resultado: r.resultado, modo_teste: ctx.config.modoTeste && !observado?.enviada, motivo: r.motivo, respostas: r.respostas });
@@ -173,6 +179,9 @@ async function main() {
   if (!ia.disponivel()) console.log('  Aviso: sem GEMINI_API_KEY no .env: sem filtro da IA e sem busca na internet.');
   console.log(`  Fontes: ${FONTES.map((f) => `${f.nome} (a cada ${f.a_cada >= 60 ? `${f.a_cada / 60}h` : `${f.a_cada} min`})`).join(' · ')}\n`);
 
+  for (const v of await repo.vagas.listar({ status: 'para_voce', limite: 2000 })) {
+    if (/^Candidatura simplificada/.test(v.motivo_status || '')) await repo.vagas.atualizar(v.id, { status: 'na_fila', plataforma_envio: 'linkedin_easy', motivo_status: 'Candidatura simplificada do LinkedIn (o agente de IA faz)' });
+  }
   const pausadas = new Map(); // plataforma de candidatura -> até quando (CAPTCHA)
   let ultimoLogin = 0;
   while (!parar) {
@@ -215,13 +224,16 @@ async function main() {
     if (vaga) {
       try {
         const r = await candidatar(vaga, ctx);
+        if (r.adiar) { const amanha = new Date(); amanha.setHours(24, 5, 0, 0); pausadas.set(vaga._plataforma, amanha.getTime()); }
         if (r.resultado === 'captcha') { pausadas.set(vaga._plataforma, Date.now() + 6 * 60 * MINUTO); await log('aviso', vaga._plataforma, 'CAPTCHA: candidaturas nessa plataforma pausadas por 6 horas.'); }
       } catch (e) {
         await log('erro', vaga._plataforma, `${vaga.titulo}: ${e.message.split('\n')[0]}`);
         await repo.vagas.atualizar(vaga.id, { status: 'erro', motivo_status: e.message.slice(0, 300) }).catch(() => {});
       }
       // vaga descartada pelo filtro não conta como candidatura: já segue
-      const min = PAUSA_ENTRE[0] + Math.random() * (PAUSA_ENTRE[1] - PAUSA_ENTRE[0]);
+      // no LinkedIn com a sua conta, bem mais devagar
+      const [ini, fim] = vaga._plataforma === 'linkedin_easy' ? [8, 15] : PAUSA_ENTRE;
+      const min = ini + Math.random() * (fim - ini);
       console.log(`\n  ${hora()} Próxima candidatura em ${Math.round(min)} min.`);
       for (let t = 0; t < min * 60 && !parar; t += 5) await espera(5000);
       continue;

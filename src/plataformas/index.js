@@ -6,4 +6,5 @@ module.exports = {
   gupy: require('./gupy'),
   infojobs: require('./infojobs'),
   sites: require('./sites'),
+  linkedin_easy: require('./linkedin-easy'),
 };

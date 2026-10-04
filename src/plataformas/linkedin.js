@@ -184,7 +184,11 @@ async function resolverVaga(vaga, { pagina, contexto, config, repo }) {
     return { dados: { ...base, status: 'descartada', motivo_status: `Publicada há ${info.dias} dias (limite: ${config.maxDias})` }, resumo: `descartada: publicada há ${info.dias} dias` };
   }
   if (info.simplificada && !info.externo) {
-    return { dados: { ...base, status: 'para_voce', motivo_status: 'Candidatura simplificada do LinkedIn: essa é com você, pelo app (o bot não usa a sua conta do LinkedIn para se candidatar)' }, resumo: `candidatura simplificada (botão principal: "${info.botao}")` };
+    // Candidatura simplificada: o agente de IA faz pela sua conta (com limite por dia), se for de TI e em SP
+    const { nota, justificativa } = await pontuar({ ...vaga, ...base, descricaoLida: true }, { config });
+    const area = nota >= config.notaMinima ? await conferirArea({ ...vaga, ...base }, { config }) : null;
+    if (!area || !area.ok) return { dados: { ...base, nota: area ? 5 : nota, justificativa: area ? area.motivo : justificativa, status: 'descartada', motivo_status: area ? area.motivo : `Nota ${nota} abaixo do mínimo (${config.notaMinima})` }, resumo: `simplificada, descartada: ${area ? area.motivo : `nota ${nota}`}` };
+    return { dados: { ...base, nota, justificativa: `${justificativa}; ${area.motivo}`, plataforma_envio: 'linkedin_easy', status: 'na_fila', motivo_status: 'Candidatura simplificada do LinkedIn (o agente de IA faz)' }, resumo: `candidatura simplificada, nota ${nota} (o agente faz)` };
   }
 
   let destino = info.externo ? desembrulhar(info.externo) : null;
