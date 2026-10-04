@@ -379,13 +379,22 @@ async function fazerLogin(pagina) {
   const voltouParaGupy = (u) => !ehProvedor(u) && !u.hostname.startsWith('login.') && !/signin|sign-in|\/login|callback/i.test(u.pathname);
   const limite = Date.now() + 45000;
   let cliquesNoProvedor = 0;
+  let senhaUsada = false;
   while (Date.now() < limite) {
     await pausa(1500, 2000);
     const url = new URL(pagina.url());
     if (voltouParaGupy(url)) { await esperarPagina(pagina); return { ok: true }; }
     if (!ehProvedor(url)) continue; // ainda na Gupy, carregando
     if (await pagina.locator('input[type=password]:visible').count()) {
-      return { ok: false, motivo: `O ${provedor} pediu a SENHA (a sessão dele expirou). Rode "npm run gupy:login", entre no ${provedor} marcando "Manter conectado" e feche a janela.` };
+      // sessão do LinkedIn/Google expirou: usa a senha salva no cofre (npm run login:salvar, site linkedin.com)
+      const cred = logins.obter(pagina.url()) || logins.obter(`${provedor}.com`);
+      if (cred && !senhaUsada) {
+        senhaUsada = true;
+        const r = await entrarComSenha(pagina, cred);
+        if (!r.ok && !/tela de login n[aã]o saiu/.test(r.motivo)) return { ok: false, motivo: `O ${provedor} pediu a senha e não deu certo: ${r.motivo}` };
+        continue;
+      }
+      return { ok: false, motivo: `O ${provedor} pediu a SENHA (a sessão dele expirou). Salve a senha dele com "npm run login:salvar" (site: ${provedor}.com) ou rode "npm run gupy:login" e entre marcando "Manter conectado".` };
     }
     if (cliquesNoProvedor < 2) {
       const confirmar = await pagina.evaluate(acharBotao, CONFIRMAR_PROVEDOR).catch(() => null);

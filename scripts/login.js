@@ -44,8 +44,8 @@ async function main() {
     return;
   }
   console.log('\n=== Rota · salvar login de um site (fica criptografado; só o Rota usa) ===\n');
-  console.log('  Exemplos de site: infojobs.com.br, catho.com.br, vagas.com.br, empregos.com.br');
-  console.log('  Não use para Gupy/LinkedIn: lá o Rota entra pelo botão do LinkedIn/Google.\n');
+  console.log('  Exemplos de site: linkedin.com, infojobs.com.br, catho.com.br, vagas.com.br');
+  console.log('  Para o LinkedIn use o site linkedin.com: o Rota usa quando a sessão dele expira no meio de um login.\n');
   const site = await perguntar('  Site: ');
   if (!site) return console.log('  Cancelado.\n');
   const usuario = await perguntar('  E-mail ou usuário: ');

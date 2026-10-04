@@ -19,6 +19,8 @@ const ia = require('../src/ia/gemini');
 const { conferirArea } = require('../src/ia/conferir-area');
 const { areaPorRegras } = require('../src/ia/pontuador');
 const { garantirLogins } = require('../src/navegador/sessoes');
+const infojobsBusca = require('../src/coleta/infojobs-busca');
+const { registrarVaga } = require('../src/agendador/executor');
 
 const GRUPOS = [
   { nome: 'Gupy', filtro: (v) => v.plataforma_envio === 'gupy' },
@@ -52,9 +54,21 @@ async function main() {
   if (ids.length) {
     for (const id of ids) { const v = await repo.vagas.obter(id); if (v) filas.push({ grupo: `#${id}`, vagas: [v], explicita: true }); }
   } else {
+    const nomes = args.filter((x) => /^[a-z]/i.test(x)).map((x) => x.toLowerCase());
+    // InfoJobs: busca vagas novas na hora (já em São Paulo), para não testar só as antigas da fila
+    if (!nomes.length || nomes.some((n) => 'infojobs'.startsWith(n))) {
+      console.log('  Buscando vagas novas no InfoJobs (São Paulo)...');
+      const cidade = String(config.localizacao || 'São Paulo').split(';')[0].split(',')[0].trim();
+      const nav = await abrirNavegador();
+      try {
+        const achadas = await infojobsBusca.buscar(nav.pagina, { termos: config.termosBusca, maxDias: Math.max(config.maxDias || 2, 7), cidade });
+        let novas = 0;
+        for (const v of achadas) { const r = await registrarVaga(repo, v, { origem_plataforma: 'infojobs', origem_coleta: 'site' }).catch(() => ({})); if (r.nova) novas++; }
+        console.log(`      ${achadas.length} vagas achadas, ${novas} novas.\n`);
+      } finally { await nav.fechar().catch(() => {}); }
+    }
     const todas = [];
     for (const status of ['na_fila', 'testada', 'erro', 'pulada', 'aguardando', 'para_voce']) todas.push(...await repo.vagas.listar({ status, limite: 1000 }));
-    const nomes = args.filter((x) => /^[a-z]/i.test(x)).map((x) => x.toLowerCase());
     for (const g of GRUPOS.filter((x) => !nomes.length || nomes.some((n) => x.nome.toLowerCase().startsWith(n)))) {
       const vagas = todas
         // título claramente de outra área já fica de fora; o resto a IA confere pela descrição
