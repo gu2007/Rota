@@ -17,6 +17,26 @@ async function visivel(loc) {
   return null;
 }
 
+// Escreve e CONFERE o que ficou no campo. Tecla por tecla, a página às vezes perde letras
+// (o LinkedIn ficou com "gn200714" no lugar do e-mail inteiro). Tenta de 3 jeitos.
+async function escrever(el, valor) {
+  const confere = async () => (await el.inputValue().catch(() => '')) === valor;
+  await el.click().catch(() => {});
+  await el.fill(valor).catch(() => {});
+  if (await confere()) return true;
+  await el.press('Control+A').catch(() => {});
+  await el.press('Backspace').catch(() => {});
+  await el.pressSequentially(valor, { delay: 120 }).catch(() => {});
+  if (await confere()) return true;
+  await el.evaluate((e, v) => {
+    const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    set.call(e, v);
+    e.dispatchEvent(new Event('input', { bubbles: true }));
+    e.dispatchEvent(new Event('change', { bubbles: true }));
+  }, valor).catch(() => {});
+  return confere();
+}
+
 async function clicarEntrar(pagina) {
   const submit = await visivel(pagina.locator('button[type=submit], input[type=submit]'));
   if (submit) return submit.click({ timeout: 6000 }).catch(() => {});
@@ -37,9 +57,7 @@ async function entrarComSenha(pagina, cred) {
 
   const usuario = await visivel(pagina.locator(CAMPO_USUARIO)) || await visivel(pagina.locator('input[type=text]'));
   if (usuario) {
-    await usuario.click().catch(() => {});
-    await usuario.fill('').catch(() => {});
-    await usuario.pressSequentially(cred.usuario, { delay: 60 }).catch(() => {});
+    if (!(await escrever(usuario, cred.usuario))) return { ok: false, motivo: 'não consegui escrever o e-mail completo no campo' };
     await pausa(400, 900);
   }
   let senha = await visivel(pagina.locator('input[type=password]'));
@@ -53,9 +71,9 @@ async function entrarComSenha(pagina, cred) {
     const texto = await pagina.innerText('body').catch(() => '');
     return { ok: false, motivo: PEDE_CODIGO.test(texto) ? 'o site mandou um código por e-mail/SMS para entrar' : 'não achei o campo de senha' };
   }
-  await senha.click().catch(() => {});
-  await senha.fill('').catch(() => {});
-  await senha.pressSequentially(cred.senha, { delay: 60 }).catch(() => {});
+  if (!(await escrever(senha, cred.senha))) return { ok: false, motivo: 'não consegui escrever a senha completa no campo' };
+  // o e-mail pode ter sido mexido pela página (autocompletar) enquanto digitava a senha: confere de novo
+  if (usuario && (await usuario.inputValue().catch(() => cred.usuario)) !== cred.usuario) await escrever(usuario, cred.usuario);
   await pausa(400, 900);
   await clicarEntrar(pagina);
 
