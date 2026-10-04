@@ -1,9 +1,10 @@
 // Teste "só IA": em cada plataforma, uma vaga é feita do começo ao fim pelo agente de IA
 // (sem as regras), no MODO TESTE (nada é enviado). Mede quantas ele leva até o botão final
 // e lista tudo o que ele preencheu, para você conferir se acertou.
+// Vaga que não é de TI é descartada e ele já tenta a próxima da mesma plataforma.
 //   npm run testar:agente              -> 1 vaga da Gupy, do InfoJobs, da Catho e de site de empresa
-//   npm run testar:agente 439 212      -> essas vagas (pelo número)
 //   npm run testar:agente infojobs     -> só uma vaga do InfoJobs
+//   npm run testar:agente 439 212      -> essas vagas (pelo número)
 const fs = require('fs');
 const path = require('path');
 const { ambiente, lerConfiguracoes } = require('../src/config');
@@ -24,7 +25,8 @@ const GRUPOS = [
   { nome: 'Catho', filtro: (v) => /catho\.com/.test(v.url_candidatura || v.url) },
   { nome: 'Site de empresa', filtro: (v) => v.plataforma_envio === 'sites' && !/catho\.com/.test(v.url_candidatura || v.url) },
 ];
-const NAO_SERVE = /não é de tecnologia|fora de TI|já se candidatou|repetida|Mesma vaga/i;
+const NAO_SERVE = /não é de tecnologia|fora de TI|já se candidatou|repetida|Mesma vaga|encerrad|não está mais dispon/i;
+const MAX_TENTATIVAS = 10; // vagas por plataforma até achar uma de TI aberta
 
 async function main() {
   const repo = require('../src/db').repo();
@@ -42,58 +44,81 @@ async function main() {
   console.log('\n=== Rota · teste "só IA": o agente faz a candidatura inteira (modo teste: NADA é enviado) ===\n');
   if (!ia.disponivel()) { console.log('  Precisa da GEMINI_API_KEY no .env.\n'); return repo.encerrar(); }
 
-  // escolhe as vagas
-  const ids = process.argv.slice(2).filter((a) => /^\d+$/.test(a)).map(Number);
-  const escolhidas = [];
+  // filas de candidatas por plataforma
+  const args = process.argv.slice(2);
+  const ids = args.filter((a) => /^\d+$/.test(a)).map(Number);
+  const filas = [];
   if (ids.length) {
-    for (const id of ids) { const v = await repo.vagas.obter(id); if (v) escolhidas.push({ grupo: `#${id}`, vaga: v }); }
+    for (const id of ids) { const v = await repo.vagas.obter(id); if (v) filas.push({ grupo: `#${id}`, vagas: [v], explicita: true }); }
   } else {
     const todas = [];
     for (const status of ['na_fila', 'testada', 'erro', 'pulada', 'aguardando', 'para_voce']) todas.push(...await repo.vagas.listar({ status, limite: 1000 }));
-    // npm run testar:agente infojobs -> só essa plataforma
-    const nomes = process.argv.slice(2).filter((x) => /^[a-z]/i.test(x)).map((x) => x.toLowerCase());
+    const nomes = args.filter((x) => /^[a-z]/i.test(x)).map((x) => x.toLowerCase());
     for (const g of GRUPOS.filter((x) => !nomes.length || nomes.some((n) => x.nome.toLowerCase().startsWith(n)))) {
-      const v = todas.filter((x) => g.filtro(x) && !NAO_SERVE.test(x.motivo_status || '') && (x.nota ?? 0) >= config.notaMinima && !/fora de TI/.test(areaPorRegras(x).motivo))
-        .sort((a, b) => (a.status === 'na_fila' ? 0 : 1) - (b.status === 'na_fila' ? 0 : 1) || b.id - a.id)[0];
-      if (v) escolhidas.push({ grupo: g.nome, vaga: await repo.vagas.obter(v.id) });
+      const vagas = todas
+        // título claramente de outra área já fica de fora; o resto a IA confere pela descrição
+        .filter((x) => g.filtro(x) && !NAO_SERVE.test(x.motivo_status || '') && (x.nota ?? 0) >= config.notaMinima && !/fora de TI/.test(areaPorRegras(x).motivo))
+        .sort((a, b) => (a.status === 'na_fila' ? 0 : 1) - (b.status === 'na_fila' ? 0 : 1) || b.id - a.id)
+        .slice(0, MAX_TENTATIVAS);
+      if (vagas.length) filas.push({ grupo: g.nome, vagas });
       else console.log(`  ${g.nome}: nenhuma vaga de TI na fila para testar (rode npm run rodar um tempo para achar).`);
     }
   }
-  if (!escolhidas.length) { console.log('\n  Nada para testar.\n'); return repo.encerrar(); }
-  console.log(`\n  ${escolhidas.length} vagas. O Chrome vai abrir: não mexa nele.\n`);
+  if (!filas.length) { console.log('\n  Nada para testar.\n'); return repo.encerrar(); }
+  console.log('\n  O Chrome vai abrir: não mexa nele.\n');
 
   const pastaBase = path.join(__dirname, '..', 'dados', 'agente', new Date().toISOString().replace(/[:.]/g, '-'));
   const relatorio = [];
-  for (const { grupo, vaga } of escolhidas) {
-    const url = vaga.url_candidatura || vaga.url;
-    console.log(`  [${grupo}] #${vaga.id} ${vaga.titulo} — ${vaga.empresa || ''}\n      ${url}`);
-    const pastaPrints = path.join(pastaBase, `vaga-${vaga.id}`);
-    const nav = await abrirNavegador();
-    let r; let vazios = [];
-    try {
-      await nav.pagina.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-      await pausa(2500, 4000);
-      await aceitarCookies(nav.pagina);
-      const descricao = String(vaga.descricao || '').length >= 400 ? vaga.descricao : (await nav.pagina.innerText('body').catch(() => '')).slice(0, 8000);
-      const area = await conferirArea({ ...vaga, descricao }, { config });
-      if (!area.ok) throw new Error(`pulei: ${area.motivo}`);
-      r = await agir({
-        pagina: nav.pagina, contexto: nav.contexto, ctx, vaga, preencherFn: gupy.preencher, log,
-        inicio: true, pastaPrints, loginSocialFn: gupy.fazerLogin,
-      });
-      const ultima = nav.contexto.pages().at(-1);
-      vazios = ultima ? (await ultima.evaluate(lerCampos).catch(() => [])).filter((c) => c.obrigatorio && !c.preenchido && c.rotulo).map((c) => c.rotulo) : [];
-    } catch (e) {
-      r = { resultado: 'erro', motivo: e.message.split('\n')[0], respostas: [], passos: 0 };
-    } finally {
-      await nav.fechar().catch(() => {});
+  for (const { grupo, vagas, explicita } of filas) {
+    let feita = false;
+    for (const resumo of vagas) {
+      const vaga = await repo.vagas.obter(resumo.id);
+      const url = vaga.url_candidatura || vaga.url;
+      console.log(`  [${grupo}] #${vaga.id} ${vaga.titulo} — ${vaga.empresa || ''}\n      ${url}`);
+      const pastaPrints = path.join(pastaBase, `vaga-${vaga.id}`);
+      const nav = await abrirNavegador();
+      let r; let vazios = []; let descartada = null;
+      try {
+        await nav.pagina.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await pausa(2500, 4000);
+        await aceitarCookies(nav.pagina);
+        // só vaga de TI (lendo a descrição) e ainda aberta
+        const texto = await nav.pagina.innerText('body').catch(() => '');
+        if (/vaga (encerrada|expirada|n[aã]o est[aá] mais dispon)|n[aã]o est[aá] mais dispon[ií]vel|no longer (available|accepting)/i.test(texto.slice(0, 5000))) descartada = 'vaga encerrada';
+        if (!descartada) {
+          const descricao = String(vaga.descricao || '').length >= 400 ? vaga.descricao : texto.slice(0, 8000);
+          const area = await conferirArea({ ...vaga, descricao }, { config });
+          if (!area.ok) descartada = area.motivo;
+        }
+        if (!descartada) {
+          r = await agir({
+            pagina: nav.pagina, contexto: nav.contexto, ctx, vaga, preencherFn: gupy.preencher, log,
+            inicio: true, pastaPrints, loginSocialFn: gupy.fazerLogin,
+          });
+          const ultima = nav.contexto.pages().at(-1);
+          vazios = ultima ? (await ultima.evaluate(lerCampos).catch(() => [])).filter((c) => c.obrigatorio && !c.preenchido && c.rotulo).map((c) => c.rotulo) : [];
+        }
+      } catch (e) {
+        r = { resultado: 'erro', motivo: e.message.split('\n')[0], respostas: [], passos: 0 };
+      } finally {
+        await nav.fechar().catch(() => {});
+      }
+      if (descartada) {
+        await repo.vagas.atualizar(vaga.id, { status: 'descartada', motivo_status: descartada });
+        console.log(`      => descartada (${descartada.slice(0, 120)})${explicita ? '' : '. Indo para a próxima...'}\n`);
+        if (explicita) relatorio.push({ grupo, id: vaga.id, titulo: vaga.titulo, chegou: false, resultado: 'descartada', motivo: descartada, passos: 0 });
+        continue;
+      }
+      const chegou = ['simulada', 'enviada'].includes(r.resultado);
+      console.log(`      => ${chegou ? 'CHEGOU NO BOTÃO FINAL' : 'NÃO TERMINOU'} em ${r.passos} passos — ${r.motivo}`);
+      for (const x of r.respostas || []) console.log(`         • ${String(x.pergunta).slice(0, 70)} → ${String(x.resposta).slice(0, 60)}`);
+      if (vazios.length) console.log(`         obrigatórios que ficaram vazios: ${vazios.slice(0, 6).join(' | ')}`);
+      console.log(`         prints de cada passo: ${pastaPrints}\n`);
+      relatorio.push({ grupo, id: vaga.id, titulo: vaga.titulo, empresa: vaga.empresa, url, chegou, resultado: r.resultado, motivo: r.motivo, passos: r.passos, preenchidos: r.respostas, vazios });
+      feita = true;
+      break; // uma por plataforma
     }
-    const chegou = ['simulada', 'enviada'].includes(r.resultado);
-    console.log(`      => ${chegou ? 'CHEGOU NO BOTÃO FINAL' : 'NÃO TERMINOU'} em ${r.passos} passos — ${r.motivo}`);
-    for (const x of r.respostas || []) console.log(`         • ${String(x.pergunta).slice(0, 70)} → ${String(x.resposta).slice(0, 60)}`);
-    if (vazios.length) console.log(`         obrigatórios que ficaram vazios: ${vazios.slice(0, 6).join(' | ')}`);
-    console.log(`         prints de cada passo: ${pastaPrints}\n`);
-    relatorio.push({ grupo, id: vaga.id, titulo: vaga.titulo, empresa: vaga.empresa, url, chegou, resultado: r.resultado, motivo: r.motivo, passos: r.passos, preenchidos: r.respostas, vazios });
+    if (!feita && !explicita) console.log(`  ${grupo}: nenhuma das ${vagas.length} vagas da fila era de TI e aberta.\n`);
   }
 
   fs.mkdirSync(pastaBase, { recursive: true });
