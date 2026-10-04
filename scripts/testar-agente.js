@@ -4,6 +4,7 @@
 // Vaga que não é de TI é descartada e ele já tenta a próxima da mesma plataforma.
 //   npm run testar:agente              -> 1 vaga da Gupy, do InfoJobs, da Catho e de site de empresa
 //   npm run testar:agente infojobs     -> só uma vaga do InfoJobs
+//   npm run testar:agente linkedin     -> uma vaga achada no LinkedIn (candidatura no site da empresa)
 //   npm run testar:agente 439 212      -> essas vagas (pelo número)
 const fs = require('fs');
 const path = require('path');
@@ -23,6 +24,8 @@ const infojobsBusca = require('../src/coleta/infojobs-busca');
 const { registrarVaga } = require('../src/agendador/executor');
 
 const GRUPOS = [
+  // achada no LinkedIn, candidatura no site da empresa/Gupy (a Candidatura simplificada do LinkedIn fica de fora)
+  { nome: 'LinkedIn', filtro: (v) => v.origem_plataforma === 'linkedin' && ['gupy', 'sites', 'infojobs'].includes(v.plataforma_envio) },
   { nome: 'Gupy', filtro: (v) => v.plataforma_envio === 'gupy' },
   { nome: 'InfoJobs', filtro: (v) => v.plataforma_envio === 'infojobs' },
   { nome: 'Catho', filtro: (v) => /catho\.com/.test(v.url_candidatura || v.url) },
