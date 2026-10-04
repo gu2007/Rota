@@ -21,6 +21,7 @@ const { conferirArea } = require('../src/ia/conferir-area');
 const { areaPorRegras } = require('../src/ia/pontuador');
 const { garantirLogins } = require('../src/navegador/sessoes');
 const infojobsBusca = require('../src/coleta/infojobs-busca');
+const linkedin = require('../src/plataformas/linkedin');
 const { registrarVaga } = require('../src/agendador/executor');
 
 const GRUPOS = [
@@ -70,6 +71,19 @@ async function main() {
         for (const v of achadas) { const r = await registrarVaga(repo, v, { origem_plataforma: 'infojobs', origem_coleta: 'site' }).catch(() => ({})); if (r.nova) novas++; }
         console.log(`      ${achadas.length} vagas achadas, ${novas} novas.\n`);
       } finally { await nav.fechar().catch(() => {}); }
+    }
+    // LinkedIn: busca vagas novas de estágio e descobre onde é a candidatura (Easy Apply ou site da empresa).
+    // O filtro f_AL=true do LinkedIn (só Easy Apply) foi testado: com estágio de TI em SP ele enche a lista de vagas que não têm nada a ver.
+    const querEasy = nomes.some((n) => 'easy apply'.startsWith(n));
+    const querLinkedin = nomes.some((n) => 'linkedin'.startsWith(n));
+    if (querEasy || querLinkedin) {
+      console.log(`  Buscando vagas novas de estágio no LinkedIn...`);
+      const achadas = await linkedin.buscarVagas({ config, log: async () => {} }, { paginas: 3 });
+      let novas = 0;
+      for (const v of achadas) { const r = await registrarVaga(repo, v, { origem_plataforma: 'linkedin', origem_coleta: 'busca' }).catch(() => ({})); if (r.nova) novas++; }
+      console.log(`      ${achadas.length} vagas achadas, ${novas} novas. Abrindo as da fila para conferir (TI, cidade, nº de candidatos)...`);
+      await linkedin.coletar({ repo, config, buscar: false, log: async (n, o, m) => { if (o === 'linkedin') console.log(`      ${m}`); } }, { porVez: 15 });
+      console.log();
     }
     const todas = [];
     for (const status of ['na_fila', 'testada', 'erro', 'pulada', 'aguardando', 'para_voce']) todas.push(...await repo.vagas.listar({ status, limite: 1000 }));

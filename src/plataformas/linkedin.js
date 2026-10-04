@@ -226,13 +226,16 @@ async function resolverVaga(vaga, { pagina, contexto, config, repo }) {
 }
 
 // Busca pública com os termos de Ajustes. Devolve as vagas achadas (quem grava é o executor/script)
-async function buscarVagas(ctx, { paginas = 2 } = {}) {
+// soSimplificada: só vagas com Candidatura simplificada (Easy Apply)
+async function buscarVagas(ctx, { paginas = 2, soSimplificada = false } = {}) {
   const termos = ctx.config?.termosBusca || [];
   if (!termos.length) return [];
   const local = String(ctx.config?.localizacao || 'São Paulo').split(/[;,]/)[0].trim() || 'São Paulo';
   // só vagas recentes: o LinkedIn filtra pela idade (1 dia = 24h; 2 dias = 48h...)
   const periodo = `r${Math.max(1, ctx.config?.maxDias ?? 2) * 86400}`;
-  const achadas = await busca.buscar({ termos, local, paginas, periodo, log: ctx.log });
+  // o próprio LinkedIn já filtra o nível: só estágio (ou estágio + júnior, se ligado em Ajustes)
+  const filtros = `&f_E=${ctx.config?.aceitaJunior ? '1%2C2' : '1'}${soSimplificada ? '&f_AL=true' : ''}`;
+  const achadas = await busca.buscar({ termos, local, paginas, periodo, filtros, log: ctx.log });
   busca.anotarBusca(achadas.length);
   await ctx.log('info', 'linkedin', `Busca no LinkedIn: ${achadas.length} vagas para ${termos.length} termos em ${local}.`);
   return achadas;

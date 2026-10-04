@@ -29,11 +29,12 @@ function lerResultados(html) {
 }
 
 // periodo: r86400 = 24h, r604800 = 7 dias
-async function buscar({ termos, local = 'São Paulo', paginas = 2, periodo = 'r604800', fetchFn = fetch, log = () => {} }) {
+// filtros: parâmetros extras da busca do LinkedIn (f_E=1: nível estágio; f_AL=true: só Candidatura simplificada)
+async function buscar({ termos, local = 'São Paulo', paginas = 2, periodo = 'r604800', filtros = '', fetchFn = fetch, log = () => {} }) {
   const porId = new Map();
   for (const termo of termos) {
     for (let p = 0; p < paginas; p++) {
-      const url = `${BASE}?keywords=${encodeURIComponent(termo)}&location=${encodeURIComponent(local)}&f_TPR=${periodo}&start=${p * 10}`;
+      const url = `${BASE}?keywords=${encodeURIComponent(termo)}&location=${encodeURIComponent(local)}&f_TPR=${periodo}${filtros}&start=${p * 10}`;
       let html = '';
       try {
         const resp = await fetchFn(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', 'Accept-Language': 'pt-BR,pt;q=0.9' } });
