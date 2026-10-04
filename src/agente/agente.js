@@ -76,9 +76,11 @@ async function pedirAoGemini({ prompt, imagem }, { fetchFn = fetch } = {}) {
   throw new Error('Gemini: limite de uso atingido (plano grátis). Tento de novo mais tarde.');
 }
 
-function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, modoTeste, temLogin, inicio }) {
+function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, modoTeste, temLogin, inicio, objetivo }) {
   return [
-    inicio
+    objetivo === 'login'
+      ? 'Você é o agente que ENTRA na conta do candidato num site de vagas, num navegador. Seu único objetivo agora é fazer login (não se candidate a nada). Se o site tiver "Entrar"/"Login"/"Acessar", clique; na tela de login use a ação "login_social" (se houver botão do LinkedIn) ou "login" (e-mail e senha salvos). Quando a página mostrar que o candidato está logado (nome dele, foto, "Sair", "Minha conta", área do candidato), status "logado".'
+      : inicio
       ? 'Você é o agente que faz candidaturas a vagas de emprego NO LUGAR do candidato, num navegador. Você começa na página da vaga: clique no botão de candidatura e faça a inscrição inteira até o fim.'
       : 'Você é o agente que termina candidaturas a vagas de emprego NO LUGAR do candidato, num navegador. Um robô de regras já tentou e travou; você continua de onde está.',
     'A cada passo você recebe: um print da tela, os CAMPOS (com id cN) e os BOTÕES (com id bN). Responda com as próximas ações (até 8) e o status.',
@@ -99,7 +101,7 @@ function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, mo
     '- Botões "Continuar", "Próximo", "Salvar e continuar" avançam etapas (não são o envio final). Marque "final": true só no clique que ENVIA a candidatura.',
     '- Campo recusado (mensagem de erro): corrija com outro formato (ex.: telefone com ou sem +55, data DD/MM/AAAA).',
     '- Campos opcionais sem informação verdadeira: deixe em branco.',
-    'Formato da resposta (JSON): {"pensamento":"<curto>","acoes":[{"acao":"preencher","id":"c3","valor":"..."},{"acao":"clicar","id":"b2","final":false},{"acao":"login"},{"acao":"login_social"},{"acao":"rolar"},{"acao":"esperar"}],"status":"continuar|pronto_para_enviar|enviado|ja_candidatado|ajuda","motivo":"<se ajuda: o que falta>"}',
+    'Formato da resposta (JSON): {"pensamento":"<curto>","acoes":[{"acao":"preencher","id":"c3","valor":"..."},{"acao":"clicar","id":"b2","final":false},{"acao":"login"},{"acao":"login_social"},{"acao":"rolar"},{"acao":"esperar"}],"status":"continuar|pronto_para_enviar|enviado|ja_candidatado|logado|ajuda","motivo":"<se ajuda: o que falta>"}',
     `VAGA: ${vaga?.titulo || ''} — ${vaga?.empresa || ''}`,
     `DADOS DO CANDIDATO\n${candidato}`,
     `PÁGINA: ${tela.titulo} — ${tela.url}`,
@@ -115,7 +117,8 @@ function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, mo
 // listas, rádios, telefone, upload...). Devolve { resultado, motivo, respostas, passos }
 // inicio: começa na página da vaga (teste "só IA"); pastaPrints: salva print e decisão de cada passo;
 // loginSocialFn: entra pelo botão do LinkedIn/Google (Gupy)
-async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () => {}, pedirFn = pedirAoGemini, inicio = false, pastaPrints = null, loginSocialFn = null }) {
+// objetivo "login": só entra na conta (logadoFn diz quando conseguiu)
+async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () => {}, pedirFn = pedirAoGemini, inicio = false, pastaPrints = null, loginSocialFn = null, objetivo = 'candidatura', logadoFn = null }) {
   if (!ia.disponivel()) return { resultado: 'pulada', motivo: 'agente de IA desligado (sem GEMINI_API_KEY)', respostas: [], passos: 0 };
   const modoTeste = !!ctx.config?.modoTeste;
   const perfil = ctx.perfil || {};
@@ -143,6 +146,7 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
     await pausa(800, 1500);
     if (await pagina.evaluate(temDesafio).catch(() => null)) return { resultado: 'pulada', motivo: 'o site pediu CAPTCHA/verificação anti-robô', respostas, passos: passo };
 
+    if (objetivo === 'login' && logadoFn && await logadoFn(pagina).catch(() => false)) return { resultado: 'logado', motivo: 'conta conectada', respostas, passos: passo };
     const corpo = await pagina.innerText('body').catch(() => '');
     if (SUCESSO.test(corpo) && !modoTeste) return { resultado: 'enviada', motivo: 'o agente de IA concluiu a candidatura', respostas, passos: passo };
 
@@ -171,7 +175,7 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
     if (base && bruta) { fs.mkdirSync(pastaPrints, { recursive: true }); fs.writeFileSync(`${base}.jpg`, bruta); }
     let plano;
     try {
-      plano = await pedirFn({ prompt: montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, modoTeste, temLogin: !!logins.obter(tela.url), inicio }), imagem });
+      plano = await pedirFn({ prompt: montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, modoTeste, temLogin: !!logins.obter(tela.url), inicio, objetivo }), imagem });
       if (base) fs.writeFileSync(`${base}.json`, JSON.stringify({ url: tela.url, campos, botoes: tela.botoes, erros: tela.erros, plano }, null, 2));
     } catch (e) {
       return { resultado: 'pulada', motivo: `agente de IA: ${e.message.slice(0, 200)}`, respostas, passos: passo };
@@ -199,7 +203,7 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
             historico.push(`- NÃO cliquei em "${botao.texto}" (proibido: criar conta/sair/cancelar)`);
             continue;
           }
-          const final = a.final === true || FINAL.test(botao.texto);
+          const final = objetivo !== 'login' && (a.final === true || FINAL.test(botao.texto));
           if (final && modoTeste) return { resultado: 'simulada', motivo: `Modo teste: o agente de IA preencheu tudo e parou antes de "${botao.texto}"`, respostas, passos: passo };
           const abertas = new Set(contexto.pages());
           await pagina.locator(`[data-rota-ag="${a.id}"]`).first().click({ timeout: 8000 })
@@ -246,6 +250,10 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
       }
     }
 
+    if (status === 'logado' && objetivo === 'login') {
+      if (!logadoFn || await logadoFn(pagina).catch(() => false)) return { resultado: 'logado', motivo: 'conta conectada', respostas, passos: passo };
+      historico.push('- você disse que está logado, mas a página ainda não mostra a conta');
+    }
     if (status === 'ja_candidatado') return { resultado: 'ja_candidatado', motivo: 'Você já se candidatou a esta vaga (visto pelo agente de IA)', respostas, passos: passo };
     if (status === 'ajuda') return { resultado: 'pulada', motivo: `o agente de IA precisa de você: ${String(plano.motivo || '').slice(0, 250)}`, respostas, passos: passo };
     if (status === 'pronto_para_enviar' && modoTeste) return { resultado: 'simulada', motivo: 'Modo teste: o agente de IA preencheu tudo e parou antes do envio', respostas, passos: passo };
