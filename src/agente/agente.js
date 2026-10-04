@@ -15,7 +15,7 @@ const logins = require('../util/logins');
 const { pausa } = require('../navegador/navegador');
 
 const MAX_PASSOS = 30;
-const SUCESSO = /curr[ií]culo (foi )?enviado|enviamos (o )?seu curr[ií]culo|voc[eê] (j[aá] )?se candidatou|candidatura (enviada|realizada|conclu[ií]da|finalizada|recebida|efetuada|feita)|inscri[cç][aã]o (realizada|conclu[ií]da|enviada)|recebemos (a )?sua candidatura|obrigad[oa] (por se candidatar|pela (sua )?candidatura)|thank(s| you) for (your )?appl|application (submitted|received|sent)|we.?ve received your application/i;
+const SUCESSO = /\bcv enviado|curr[ií]culo (foi )?enviado|enviamos (o )?seu curr[ií]culo|voc[eê] (j[aá] )?se candidatou|candidatura (enviada|realizada|conclu[ií]da|finalizada|recebida|efetuada|feita)|inscri[cç][aã]o (realizada|conclu[ií]da|enviada)|recebemos (a )?sua candidatura|obrigad[oa] (por se candidatar|pela (sua )?candidatura)|thank(s| you) for (your )?appl|application (submitted|received|sent)|we.?ve received your application/i;
 const FINAL = /^(enviar|finalizar|concluir|submit|send|confirmar)( a| minha)?( candidatura| inscri[cç][aã]o| application| aplica[cç][aã]o)?$|enviar candidatura|finalizar candidatura|finalizar inscri[cç][aã]o|submit application|send application/i;
 // Catho e InfoJobs, logados, enviam a candidatura no PRIMEIRO clique ("Quero me candidatar", "Candidatar-me",
 // "Envio Turbo"): nesses sites esse botão já é o envio final (no modo teste o Rota para antes dele)

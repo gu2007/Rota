@@ -38,7 +38,8 @@
     "login:remover": "node scripts/login.js remover",
     "piloto": "node scripts/piloto.js",
     "testar:agente": "node scripts/testar-agente.js",
-    "entrar": "node scripts/entrar.js"
+    "entrar": "node scripts/entrar.js",
+    "candidatar": "node scripts/testar-agente.js enviar lote"
   },
   "engines": {
     "node": ">=18"

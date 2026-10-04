@@ -5,6 +5,7 @@
 //   npm run testar:agente              -> 1 vaga da Gupy, do InfoJobs, da Catho e de site de empresa
 //   npm run testar:agente infojobs     -> só uma vaga do InfoJobs
 //   npm run testar:agente catho enviar -> UMA candidatura DE VERDADE (pergunta antes de enviar)
+//   npm run candidatar catho 10        -> até 10 candidaturas DE VERDADE na Catho (confirma uma vez no começo)
 //   npm run testar:agente linkedin     -> uma vaga achada no LinkedIn (candidatura no site da empresa)
 //   npm run testar:agente 439 212      -> essas vagas (pelo número)
 const fs = require('fs');
@@ -37,7 +38,7 @@ const GRUPOS = [
   { nome: 'Site de empresa', filtro: (v) => v.plataforma_envio === 'sites' && !/catho\.com/.test(v.url_candidatura || v.url) },
 ];
 const NAO_SERVE = /não é de tecnologia|fora de TI|já se candidatou|repetida|Mesma vaga|encerrad|não está mais dispon/i;
-const MAX_TENTATIVAS = 10; // vagas por plataforma até achar uma de TI aberta
+const MAX_TENTATIVAS = 10; // vagas por plataforma até achar uma de TI aberta (multiplicado pela quantidade)
 
 async function main() {
   const repo = require('../src/db').repo();
@@ -61,12 +62,14 @@ async function main() {
 
   // filas de candidatas por plataforma
   const args = process.argv.slice(2);
-  const ids = args.filter((a) => /^\d+$/.test(a)).map(Number);
+  // número pequeno (até 50) é a quantidade; número grande é o nº de uma vaga
+  const quantidade = Number(args.find((a) => /^\d+$/.test(a) && Number(a) <= 50)) || (args.includes('lote') ? 10 : 1);
+  const ids = args.filter((a) => /^\d+$/.test(a) && Number(a) > 50).map(Number);
   const filas = [];
   if (ids.length) {
     for (const id of ids) { const v = await repo.vagas.obter(id); if (v) filas.push({ grupo: `#${id}`, vagas: [v], explicita: true }); }
   } else {
-    const nomes = args.filter((x) => /^[a-z]/i.test(x) && x !== 'enviar').map((x) => x.toLowerCase());
+    const nomes = args.filter((x) => /^[a-z]/i.test(x) && !['enviar', 'lote'].includes(x)).map((x) => x.toLowerCase());
     // InfoJobs: busca vagas novas na hora (já em São Paulo), para não testar só as antigas da fila
     if (!nomes.length || nomes.some((n) => 'infojobs'.startsWith(n))) {
       console.log('  Buscando vagas novas no InfoJobs (São Paulo)...');
@@ -115,7 +118,7 @@ async function main() {
         // título claramente de outra área já fica de fora; o resto a IA confere pela descrição
         .filter((x) => g.filtro(x) && !NAO_SERVE.test(x.motivo_status || '') && (x.nota ?? 0) >= config.notaMinima && !/fora de TI/.test(areaPorRegras(x).motivo))
         .sort((a, b) => (a.status === 'na_fila' ? 0 : 1) - (b.status === 'na_fila' ? 0 : 1) || b.id - a.id)
-        .slice(0, MAX_TENTATIVAS);
+        .slice(0, Math.min(80, MAX_TENTATIVAS * quantidade));
       if (vagas.length) filas.push({ grupo: g.nome, vagas });
       else console.log(`  ${g.nome}: nenhuma vaga de TI na fila para testar (rode npm run rodar um tempo para achar).`);
     }
@@ -126,10 +129,17 @@ async function main() {
   const sessoes = await garantirLogins({ log: async (n, o, m) => { if (o === 'login') console.log(`      ${m}`); } }).catch(() => ({}));
   console.log();
 
+  if (enviar && quantidade > 1) {
+    const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+    const resp = await new Promise((ok) => rl.question(`  Vou ENVIAR DE VERDADE até ${quantidade} candidaturas em: ${filas.map((x) => x.grupo).join(', ')} (só vagas de TI em ${config.localizacao || 'São Paulo'}, conferidas pela descrição). Confirma? Digite "sim": `, ok));
+    rl.close();
+    if (resp.trim().toLowerCase() !== 'sim') { console.log('\n  Cancelado: nada foi enviado.\n'); return repo.encerrar(); }
+    console.log();
+  }
   const pastaBase = path.join(__dirname, '..', 'dados', 'agente', new Date().toISOString().replace(/[:.]/g, '-'));
   const relatorio = [];
   for (const { grupo, vagas, explicita } of filas) {
-    let feita = false;
+    let feitas = 0;
     for (const resumo of vagas) {
       const vaga = await repo.vagas.obter(resumo.id);
       const url = vaga.url_candidatura || vaga.url;
@@ -149,7 +159,7 @@ async function main() {
           const area = await conferirArea({ ...vaga, descricao }, { config });
           if (!area.ok) descartada = area.motivo;
         }
-        if (!descartada && enviar) {
+        if (!descartada && enviar && quantidade === 1) {
           const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
           const resp = await new Promise((ok) => rl.question(`      Enviar a candidatura DE VERDADE para esta vaga? Digite "sim": `, ok));
           rl.close();
@@ -186,10 +196,12 @@ async function main() {
       if (vazios.length) console.log(`         obrigatórios que ficaram vazios: ${vazios.slice(0, 6).join(' | ')}`);
       console.log(`         prints de cada passo: ${pastaPrints}\n`);
       relatorio.push({ grupo, id: vaga.id, titulo: vaga.titulo, empresa: vaga.empresa, url, chegou, resultado: r.resultado, motivo: r.motivo, passos: r.passos, preenchidos: r.respostas, vazios });
-      feita = true;
-      break; // uma por plataforma
+      feitas++;
+      if (feitas >= quantidade) break;
+      // entre uma candidatura de verdade e outra, uma pausa (parece gente, não robô)
+      if (enviar) { const s2 = 40 + Math.round(Math.random() * 50); console.log(`      próxima em ${s2} s...\n`); await pausa(s2 * 1000, s2 * 1000); }
     }
-    if (!feita && !explicita) console.log(`  ${grupo}: nenhuma das ${vagas.length} vagas da fila era de TI e aberta.\n`);
+    if (!feitas && !explicita) console.log(`  ${grupo}: nenhuma das ${vagas.length} vagas da fila era de TI e aberta.\n`);
   }
 
   fs.mkdirSync(pastaBase, { recursive: true });
