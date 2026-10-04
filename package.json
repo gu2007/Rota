@@ -36,7 +36,8 @@
     "login:salvar": "node scripts/login.js salvar",
     "login:listar": "node scripts/login.js listar",
     "login:remover": "node scripts/login.js remover",
-    "piloto": "node scripts/piloto.js"
+    "piloto": "node scripts/piloto.js",
+    "testar:agente": "node scripts/testar-agente.js"
   },
   "engines": {
     "node": ">=18"

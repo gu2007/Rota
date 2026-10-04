@@ -1154,4 +1154,4 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
   }
 }
 
-module.exports = { tipo: 'candidatura', candidatar, PASTA_LOGS };
+module.exports = { tipo: 'candidatura', candidatar, PASTA_LOGS, preencher, fazerLogin, naTelaDeLogin };

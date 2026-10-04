@@ -1,0 +1,101 @@
+// Teste "só IA": em cada plataforma, uma vaga é feita do começo ao fim pelo agente de IA
+// (sem as regras), no MODO TESTE (nada é enviado). Mede quantas ele leva até o botão final
+// e lista tudo o que ele preencheu, para você conferir se acertou.
+//   npm run testar:agente              -> 1 vaga da Gupy, do InfoJobs, da Catho e de site de empresa
+//   npm run testar:agente 439 212      -> essas vagas (pelo número)
+const fs = require('fs');
+const path = require('path');
+const { ambiente, lerConfiguracoes } = require('../src/config');
+const { LISTAS } = require('../src/db/modelo');
+const { abrirNavegador, pausa } = require('../src/navegador/navegador');
+const { aceitarCookies } = require('../src/navegador/cookies');
+const { lerCampos } = require('../src/candidatura/leitor-pagina');
+const aprendizado = require('../src/candidatura/aprendizado');
+const gupy = require('../src/plataformas/gupy');
+const { agir } = require('../src/agente/agente');
+const ia = require('../src/ia/gemini');
+
+const GRUPOS = [
+  { nome: 'Gupy', filtro: (v) => v.plataforma_envio === 'gupy' },
+  { nome: 'InfoJobs', filtro: (v) => v.plataforma_envio === 'infojobs' },
+  { nome: 'Catho', filtro: (v) => /catho\.com/.test(v.url_candidatura || v.url) },
+  { nome: 'Site de empresa', filtro: (v) => v.plataforma_envio === 'sites' && !/catho\.com/.test(v.url_candidatura || v.url) },
+];
+const NAO_SERVE = /não é de tecnologia|fora de TI|já se candidatou|repetida|Mesma vaga/i;
+
+async function main() {
+  const repo = require('../src/db').repo();
+  await repo.iniciar(ambiente.banco);
+  const log = async (nivel, origem, msg) => { if (origem === 'agente') console.log(`      ${msg}`); };
+  const config = { ...lerConfiguracoes(await repo.config.obter()), modoTeste: true };
+  const listas = {};
+  for (const nome of Object.keys(LISTAS)) listas[nome] = await repo.listas.listar(nome);
+  const memoria = aprendizado.carregar();
+  const ctx = {
+    config, perfil: await repo.perfil.obter(), listas, pessoais: await repo.pessoais.obterTodos(),
+    respostasFixas: await repo.respostas.listar(), respondidas: await repo.perguntas.respondidas(),
+    aprendidas: Object.values(memoria.respostas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) })),
+  };
+  console.log('\n=== Rota · teste "só IA": o agente faz a candidatura inteira (modo teste: NADA é enviado) ===\n');
+  if (!ia.disponivel()) { console.log('  Precisa da GEMINI_API_KEY no .env.\n'); return repo.encerrar(); }
+
+  // escolhe as vagas
+  const ids = process.argv.slice(2).filter((a) => /^\d+$/.test(a)).map(Number);
+  const escolhidas = [];
+  if (ids.length) {
+    for (const id of ids) { const v = await repo.vagas.obter(id); if (v) escolhidas.push({ grupo: `#${id}`, vaga: v }); }
+  } else {
+    const todas = [];
+    for (const status of ['na_fila', 'testada', 'erro', 'pulada', 'aguardando', 'para_voce']) todas.push(...await repo.vagas.listar({ status, limite: 1000 }));
+    for (const g of GRUPOS) {
+      const v = todas.filter((x) => g.filtro(x) && !NAO_SERVE.test(x.motivo_status || '') && (x.nota ?? 0) >= config.notaMinima)
+        .sort((a, b) => (a.status === 'na_fila' ? 0 : 1) - (b.status === 'na_fila' ? 0 : 1) || b.id - a.id)[0];
+      if (v) escolhidas.push({ grupo: g.nome, vaga: await repo.vagas.obter(v.id) });
+      else console.log(`  ${g.nome}: nenhuma vaga de TI na fila para testar (rode npm run rodar um tempo para achar).`);
+    }
+  }
+  if (!escolhidas.length) { console.log('\n  Nada para testar.\n'); return repo.encerrar(); }
+  console.log(`\n  ${escolhidas.length} vagas. O Chrome vai abrir: não mexa nele.\n`);
+
+  const pastaBase = path.join(__dirname, '..', 'dados', 'agente', new Date().toISOString().replace(/[:.]/g, '-'));
+  const relatorio = [];
+  for (const { grupo, vaga } of escolhidas) {
+    const url = vaga.url_candidatura || vaga.url;
+    console.log(`  [${grupo}] #${vaga.id} ${vaga.titulo} — ${vaga.empresa || ''}\n      ${url}`);
+    const pastaPrints = path.join(pastaBase, `vaga-${vaga.id}`);
+    const nav = await abrirNavegador();
+    let r; let vazios = [];
+    try {
+      await nav.pagina.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      await pausa(2500, 4000);
+      await aceitarCookies(nav.pagina);
+      r = await agir({
+        pagina: nav.pagina, contexto: nav.contexto, ctx, vaga, preencherFn: gupy.preencher, log,
+        inicio: true, pastaPrints, loginSocialFn: gupy.fazerLogin,
+      });
+      const ultima = nav.contexto.pages().at(-1);
+      vazios = ultima ? (await ultima.evaluate(lerCampos).catch(() => [])).filter((c) => c.obrigatorio && !c.preenchido && c.rotulo).map((c) => c.rotulo) : [];
+    } catch (e) {
+      r = { resultado: 'erro', motivo: e.message.split('\n')[0], respostas: [], passos: 0 };
+    } finally {
+      await nav.fechar().catch(() => {});
+    }
+    const chegou = ['simulada', 'enviada'].includes(r.resultado);
+    console.log(`      => ${chegou ? 'CHEGOU NO BOTÃO FINAL' : 'NÃO TERMINOU'} em ${r.passos} passos — ${r.motivo}`);
+    for (const x of r.respostas || []) console.log(`         • ${String(x.pergunta).slice(0, 70)} → ${String(x.resposta).slice(0, 60)}`);
+    if (vazios.length) console.log(`         obrigatórios que ficaram vazios: ${vazios.slice(0, 6).join(' | ')}`);
+    console.log(`         prints de cada passo: ${pastaPrints}\n`);
+    relatorio.push({ grupo, id: vaga.id, titulo: vaga.titulo, empresa: vaga.empresa, url, chegou, resultado: r.resultado, motivo: r.motivo, passos: r.passos, preenchidos: r.respostas, vazios });
+  }
+
+  fs.mkdirSync(pastaBase, { recursive: true });
+  fs.writeFileSync(path.join(pastaBase, 'relatorio.json'), JSON.stringify(relatorio, null, 2));
+  const ok = relatorio.filter((x) => x.chegou).length;
+  console.log('  ===== RESULTADO =====');
+  for (const x of relatorio) console.log(`  ${x.chegou ? 'OK   ' : 'FALHA'} ${x.grupo.padEnd(16)} #${x.id} — ${String(x.motivo).slice(0, 90)}`);
+  console.log(`\n  ${ok} de ${relatorio.length} chegaram ao botão final sozinhas. Confira acima se o que a IA preencheu está certo.`);
+  console.log(`  Relatório e prints: ${pastaBase}\n`);
+  await repo.encerrar();
+}
+
+main().catch((e) => { console.error('\nErro no teste:', e.message, '\n'); process.exit(1); });

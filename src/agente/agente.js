@@ -43,7 +43,7 @@ function lerBotoes() {
 }
 
 function curriculo(perfil) {
-  const doPerfil = String(perfil?.curriculo_arquivo || '').trim().replace(/^["']|["']$/g, '');
+  const doPerfil = String(perfil?.curriculo_arquivo || '').replace(/["']/g, '').trim();
   if (doPerfil && fs.existsSync(doPerfil)) return doPerfil;
   const reserva = path.join(__dirname, '..', '..', 'dados', 'curriculo.pdf');
   return fs.existsSync(reserva) ? reserva : null;
@@ -73,16 +73,19 @@ async function pedirAoGemini({ prompt, imagem }, { fetchFn = fetch } = {}) {
   throw new Error('Gemini: limite de uso atingido (plano grátis). Tento de novo mais tarde.');
 }
 
-function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, modoTeste, temLogin }) {
+function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, modoTeste, temLogin, inicio }) {
   return [
-    'Você é o agente que termina candidaturas a vagas de emprego NO LUGAR do candidato, num navegador. Um robô de regras já tentou e travou; você continua de onde está.',
+    inicio
+      ? 'Você é o agente que faz candidaturas a vagas de emprego NO LUGAR do candidato, num navegador. Você começa na página da vaga: clique no botão de candidatura e faça a inscrição inteira até o fim.'
+      : 'Você é o agente que termina candidaturas a vagas de emprego NO LUGAR do candidato, num navegador. Um robô de regras já tentou e travou; você continua de onde está.',
     'A cada passo você recebe: um print da tela, os CAMPOS (com id cN) e os BOTÕES (com id bN). Responda com as próximas ações (até 8) e o status.',
     'REGRAS:',
     '- Use SOMENTE os dados do candidato abaixo. Nunca invente experiência, nota, documento, tecnologia ou nível.',
     '- Dados de contato e documentos: escreva o MARCADOR (ex.: {{email}}, {{telefone}}, {{cpf}}) e o sistema troca pelo valor real. Marcadores disponíveis: ' + marcadores.join(', ') + '.',
     '- Raça/cor, gênero, orientação, deficiência: se houver opção "Prefiro não responder/informar", use-a; senão use a resposta cadastrada pelo candidato; se não houver, peça ajuda.',
     '- Campo de arquivo de currículo: ação "preencher" com valor "{{curriculo}}".',
-    '- Tela de login: ação "login" (o sistema digita e-mail e senha salvos). ' + (temLogin ? 'Existe login salvo para este site.' : 'NÃO existe login salvo para este site: peça ajuda.'),
+    '- Tela de login com e-mail e senha: ação "login" (o sistema digita o e-mail e a senha salvos). ' + (temLogin ? 'Existe login salvo para este site.' : 'NÃO existe login salvo para este site.'),
+    '- Tela de login com botão "Entrar com LinkedIn" ou "Google" (ex.: Gupy): ação "login_social" (o sistema faz). Sem login salvo e sem botão social: status "ajuda".',
     '- NUNCA crie conta, nunca clique em cadastrar-se/criar conta, nunca resolva CAPTCHA ("não sou robô"): nesses casos, status "ajuda".',
     '- Teste de perfil, jogo, teste comportamental ou técnico: status "ajuda".',
     '- Se a página disser que o candidato já se candidatou a esta vaga: status "ja_candidatado".',
@@ -92,7 +95,7 @@ function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, mo
     '- Botões "Continuar", "Próximo", "Salvar e continuar" avançam etapas (não são o envio final). Marque "final": true só no clique que ENVIA a candidatura.',
     '- Campo recusado (mensagem de erro): corrija com outro formato (ex.: telefone com ou sem +55, data DD/MM/AAAA).',
     '- Campos opcionais sem informação verdadeira: deixe em branco.',
-    'Formato da resposta (JSON): {"pensamento":"<curto>","acoes":[{"acao":"preencher","id":"c3","valor":"..."},{"acao":"clicar","id":"b2","final":false},{"acao":"login"},{"acao":"rolar"},{"acao":"esperar"}],"status":"continuar|pronto_para_enviar|enviado|ja_candidatado|ajuda","motivo":"<se ajuda: o que falta>"}',
+    'Formato da resposta (JSON): {"pensamento":"<curto>","acoes":[{"acao":"preencher","id":"c3","valor":"..."},{"acao":"clicar","id":"b2","final":false},{"acao":"login"},{"acao":"login_social"},{"acao":"rolar"},{"acao":"esperar"}],"status":"continuar|pronto_para_enviar|enviado|ja_candidatado|ajuda","motivo":"<se ajuda: o que falta>"}',
     `VAGA: ${vaga?.titulo || ''} — ${vaga?.empresa || ''}`,
     `DADOS DO CANDIDATO\n${candidato}`,
     `PÁGINA: ${tela.titulo} — ${tela.url}`,
@@ -106,7 +109,9 @@ function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, mo
 
 // pagina/contexto: a janela onde o robô travou. preencherFn: o preenchedor do robô (sabe lidar com
 // listas, rádios, telefone, upload...). Devolve { resultado, motivo, respostas, passos }
-async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () => {}, pedirFn = pedirAoGemini }) {
+// inicio: começa na página da vaga (teste "só IA"); pastaPrints: salva print e decisão de cada passo;
+// loginSocialFn: entra pelo botão do LinkedIn/Google (Gupy)
+async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () => {}, pedirFn = pedirAoGemini, inicio = false, pastaPrints = null, loginSocialFn = null }) {
   if (!ia.disponivel()) return { resultado: 'pulada', motivo: 'agente de IA desligado (sem GEMINI_API_KEY)', respostas: [], passos: 0 };
   const modoTeste = !!ctx.config?.modoTeste;
   const perfil = ctx.perfil || {};
@@ -156,10 +161,14 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
     assinaturaAnterior = assinatura;
     if (semMudar >= 3) return { resultado: 'pulada', motivo: `o agente ficou parado na mesma tela${tela.erros.length ? ` (a página diz: ${tela.erros.join(' | ').slice(0, 200)})` : ''}`, respostas, passos: passo };
 
-    const imagem = await pagina.screenshot({ type: 'jpeg', quality: 45 }).then((b) => b.toString('base64')).catch(() => null);
+    const bruta = await pagina.screenshot({ type: 'jpeg', quality: 45 }).catch(() => null);
+    const imagem = bruta ? bruta.toString('base64') : null;
+    const base = pastaPrints ? path.join(pastaPrints, String(passo).padStart(2, '0')) : null;
+    if (base && bruta) { fs.mkdirSync(pastaPrints, { recursive: true }); fs.writeFileSync(`${base}.jpg`, bruta); }
     let plano;
     try {
-      plano = await pedirFn({ prompt: montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, modoTeste, temLogin: !!logins.obter(tela.url) }), imagem });
+      plano = await pedirFn({ prompt: montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, modoTeste, temLogin: !!logins.obter(tela.url), inicio }), imagem });
+      if (base) fs.writeFileSync(`${base}.json`, JSON.stringify({ url: tela.url, campos, botoes: tela.botoes, erros: tela.erros, plano }, null, 2));
     } catch (e) {
       return { resultado: 'pulada', motivo: `agente de IA: ${e.message.slice(0, 200)}`, respostas, passos: passo };
     }
@@ -206,6 +215,13 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
           const r = await entrarComSenha(pagina, cred);
           historico.push(r.ok ? `- entrei com o login salvo de ${cred.dominio}` : `- login falhou: ${r.motivo}`);
           if (!r.ok) return { resultado: 'pulada', motivo: `login em ${cred.dominio}: ${r.motivo}`, respostas, passos: passo };
+          break;
+        } else if (acao === 'login_social') {
+          if (!loginSocialFn) return { resultado: 'pulada', motivo: 'o site pede login pelo LinkedIn/Google', respostas, passos: passo };
+          const r = await loginSocialFn(pagina);
+          historico.push(r.ok ? '- entrei pelo botão do LinkedIn/Google' : `- login social falhou: ${r.motivo}`);
+          if (!r.ok) return { resultado: 'pulada', motivo: `login pelo LinkedIn/Google: ${r.motivo}`, respostas, passos: passo };
+          if (contexto.pages().length && pagina.isClosed()) pagina = contexto.pages().at(-1);
           break;
         } else if (acao === 'rolar') {
           await pagina.mouse.wheel(0, 700).catch(() => {});

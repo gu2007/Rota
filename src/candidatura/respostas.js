@@ -285,13 +285,13 @@ async function decidirBase(campo, { perfil: perfilBase, listas, respostasFixas, 
   const aceita = String(campo.aceita || '').toLowerCase();
   const soImagem = campo.tipo === 'arquivo' && /image|\.(jpe?g|png|gif|webp|bmp)/.test(aceita) && !/pdf|doc/.test(aceita);
   if (campo.tipo === 'arquivo' && (soImagem || /foto|photo|imagem|image|picture|avatar|retrato/.test(rotulo))) {
-    const foto = String(perfil.foto_arquivo || '').trim().replace(/^["']|["']$/g, '');
+    const foto = String(perfil.foto_arquivo || '').replace(/["']/g, '').trim();
     return foto && fs.existsSync(foto) ? { valor: foto, fonte: 'arquivo' } : null;
   }
   if (campo.tipo === 'arquivo') {
     // "Copiar como caminho" do Windows põe aspas
     // se o caminho do Perfil não existir mais, usa dados/curriculo.pdf (é só copiar o PDF para lá)
-    const doPerfil = String(perfil.curriculo_arquivo || '').trim().replace(/^["']|["']$/g, '');
+    const doPerfil = String(perfil.curriculo_arquivo || '').replace(/["']/g, '').trim();
     const reserva = require('path').join(__dirname, '..', '..', 'dados', 'curriculo.pdf');
     const arquivo = doPerfil && fs.existsSync(doPerfil) ? doPerfil : reserva;
     // Upload genérico que aceita PDF/DOC e não pede outro documento é o currículo
