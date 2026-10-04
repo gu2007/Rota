@@ -4,6 +4,7 @@
 // Vaga que não é de TI é descartada e ele já tenta a próxima da mesma plataforma.
 //   npm run testar:agente              -> 1 vaga da Gupy, do InfoJobs, da Catho e de site de empresa
 //   npm run testar:agente infojobs     -> só uma vaga do InfoJobs
+//   npm run testar:agente catho enviar -> UMA candidatura DE VERDADE (pergunta antes de enviar)
 //   npm run testar:agente linkedin     -> uma vaga achada no LinkedIn (candidatura no site da empresa)
 //   npm run testar:agente 439 212      -> essas vagas (pelo número)
 const fs = require('fs');
@@ -42,7 +43,9 @@ async function main() {
   const repo = require('../src/db').repo();
   await repo.iniciar(ambiente.banco);
   const log = async (nivel, origem, msg) => { if (origem === 'agente') console.log(`      ${msg}`); };
-  const config = { ...lerConfiguracoes(await repo.config.obter()), modoTeste: true };
+  // "enviar": uma candidatura de verdade, com confirmação (o PowerShell engole o "--", por isso é uma palavra)
+  const enviar = process.argv.slice(2).includes('enviar');
+  const config = { ...lerConfiguracoes(await repo.config.obter()), modoTeste: !enviar };
   const listas = {};
   for (const nome of Object.keys(LISTAS)) listas[nome] = await repo.listas.listar(nome);
   const memoria = aprendizado.carregar();
@@ -51,7 +54,9 @@ async function main() {
     respostasFixas: await repo.respostas.listar(), respondidas: await repo.perguntas.respondidas(),
     aprendidas: Object.values(memoria.respostas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) })),
   };
-  console.log('\n=== Rota · teste "só IA": o agente faz a candidatura inteira (modo teste: NADA é enviado) ===\n');
+  console.log(enviar
+    ? '\n=== Rota · agente de IA: UMA candidatura DE VERDADE (vou pedir confirmação antes) ===\n'
+    : '\n=== Rota · teste "só IA": o agente faz a candidatura inteira (modo teste: NADA é enviado) ===\n');
   if (!ia.disponivel()) { console.log('  Precisa da GEMINI_API_KEY no .env.\n'); return repo.encerrar(); }
 
   // filas de candidatas por plataforma
@@ -61,7 +66,7 @@ async function main() {
   if (ids.length) {
     for (const id of ids) { const v = await repo.vagas.obter(id); if (v) filas.push({ grupo: `#${id}`, vagas: [v], explicita: true }); }
   } else {
-    const nomes = args.filter((x) => /^[a-z]/i.test(x)).map((x) => x.toLowerCase());
+    const nomes = args.filter((x) => /^[a-z]/i.test(x) && x !== 'enviar').map((x) => x.toLowerCase());
     // InfoJobs: busca vagas novas na hora (já em São Paulo), para não testar só as antigas da fila
     if (!nomes.length || nomes.some((n) => 'infojobs'.startsWith(n))) {
       console.log('  Buscando vagas novas no InfoJobs (São Paulo)...');
@@ -144,6 +149,12 @@ async function main() {
           const area = await conferirArea({ ...vaga, descricao }, { config });
           if (!area.ok) descartada = area.motivo;
         }
+        if (!descartada && enviar) {
+          const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+          const resp = await new Promise((ok) => rl.question(`      Enviar a candidatura DE VERDADE para esta vaga? Digite "sim": `, ok));
+          rl.close();
+          if (resp.trim().toLowerCase() !== 'sim') { console.log('      Cancelado: nada foi enviado.\n'); break; }
+        }
         if (!descartada) {
           r = await agir({
             pagina: nav.pagina, contexto: nav.contexto, ctx, vaga, preencherFn: gupy.preencher, log,
@@ -155,6 +166,7 @@ async function main() {
       } catch (e) {
         r = { resultado: 'erro', motivo: e.message.split('\n')[0], respostas: [], passos: 0 };
       } finally {
+        if (enviar && r) { console.log('      A janela fica aberta 20 s para você ver o resultado...'); await pausa(20000, 20000); }
         await nav.fechar().catch(() => {});
       }
       if (descartada) {
@@ -165,7 +177,10 @@ async function main() {
       }
       const chegou = ['simulada', 'enviada'].includes(r.resultado);
       // testada: o próximo teste pega outra vaga (e no modo real ela é enviada pelo npm run rodar)
-      if (chegou) await repo.vagas.atualizar(vaga.id, { status: 'testada', motivo_status: r.motivo });
+      if (r.resultado === 'enviada') {
+        await repo.vagas.atualizar(vaga.id, { status: 'candidatada', motivo_status: r.motivo });
+        await repo.candidaturas.registrar({ vaga_id: vaga.id, plataforma: vaga.plataforma_envio || 'sites', resultado: 'enviada', modo_teste: false, motivo: r.motivo, respostas: r.respostas || [] });
+      } else if (chegou) await repo.vagas.atualizar(vaga.id, { status: 'testada', motivo_status: r.motivo });
       console.log(`      => ${chegou ? 'CHEGOU NO BOTÃO FINAL' : 'NÃO TERMINOU'} em ${r.passos} passos — ${r.motivo}`);
       for (const x of r.respostas || []) console.log(`         • ${String(x.pergunta).slice(0, 70)} → ${String(x.resposta).slice(0, 60)}`);
       if (vazios.length) console.log(`         obrigatórios que ficaram vazios: ${vazios.slice(0, 6).join(' | ')}`);

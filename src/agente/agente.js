@@ -15,7 +15,7 @@ const logins = require('../util/logins');
 const { pausa } = require('../navegador/navegador');
 
 const MAX_PASSOS = 30;
-const SUCESSO = /candidatura (enviada|realizada|conclu[ií]da|finalizada|recebida)|inscri[cç][aã]o (realizada|conclu[ií]da|enviada)|recebemos (a )?sua candidatura|obrigad[oa] (por se candidatar|pela (sua )?candidatura)|thank(s| you) for (your )?appl|application (submitted|received|sent)|we.?ve received your application/i;
+const SUCESSO = /curr[ií]culo (foi )?enviado|enviamos (o )?seu curr[ií]culo|voc[eê] (j[aá] )?se candidatou|candidatura (enviada|realizada|conclu[ií]da|finalizada|recebida|efetuada|feita)|inscri[cç][aã]o (realizada|conclu[ií]da|enviada)|recebemos (a )?sua candidatura|obrigad[oa] (por se candidatar|pela (sua )?candidatura)|thank(s| you) for (your )?appl|application (submitted|received|sent)|we.?ve received your application/i;
 const FINAL = /^(enviar|finalizar|concluir|submit|send|confirmar)( a| minha)?( candidatura| inscri[cç][aã]o| application| aplica[cç][aã]o)?$|enviar candidatura|finalizar candidatura|finalizar inscri[cç][aã]o|submit application|send application/i;
 // Catho e InfoJobs, logados, enviam a candidatura no PRIMEIRO clique ("Quero me candidatar", "Candidatar-me",
 // "Envio Turbo"): nesses sites esse botão já é o envio final (no modo teste o Rota para antes dele)
@@ -129,7 +129,7 @@ function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, mo
 // inicio: começa na página da vaga (teste "só IA"); pastaPrints: salva print e decisão de cada passo;
 // loginSocialFn: entra pelo botão do LinkedIn/Google (Gupy)
 // objetivo "login": só entra na conta (logadoFn diz quando conseguiu)
-async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () => {}, pedirFn = pedirAoGemini, inicio = false, pastaPrints = null, loginSocialFn = null, objetivo = 'candidatura', logadoFn = null }) {
+async function agirBase({ pagina, contexto, ctx, vaga, preencherFn, log = async () => {}, pedirFn = pedirAoGemini, inicio = false, pastaPrints = null, loginSocialFn = null, objetivo = 'candidatura', logadoFn = null, estado = {} }) {
   if (!ia.disponivel()) return { resultado: 'pulada', motivo: 'agente de IA desligado (sem GEMINI_API_KEY)', respostas: [], passos: 0 };
   const modoTeste = !!ctx.config?.modoTeste;
   const perfil = ctx.perfil || {};
@@ -221,6 +221,9 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
             if (vazios.length) { historico.push(`- NÃO enviei: ainda faltam obrigatórios: ${vazios.slice(0, 5).join(' | ')}`); break; }
           }
           if (final && modoTeste) return { resultado: 'simulada', motivo: `Modo teste: o agente de IA preencheu tudo e parou antes de "${botao.texto}"`, respostas, passos: passo };
+          // nunca clica duas vezes no mesmo botão de envio (seria candidatura dupla)
+          if (final && estado.enviados?.has(botao.texto)) { historico.push(`- NÃO cliquei de novo em "${botao.texto}": já enviei`); continue; }
+          if (final) { estado.enviados = estado.enviados || new Set(); estado.enviados.add(botao.texto); estado.enviouFinal = botao.texto; }
           const abertas = new Set(contexto.pages());
           await pagina.locator(`[data-rota-ag="${a.id}"]`).first().click({ timeout: 8000 })
             .catch(() => pagina.locator(`[data-rota-ag="${a.id}"]`).first().evaluate((e) => e.click()));
@@ -282,6 +285,16 @@ async function agir({ pagina, contexto, ctx, vaga, preencherFn, log = async () =
     }
   }
   return { resultado: 'pulada', motivo: `o agente de IA passou de ${MAX_PASSOS} passos sem terminar`, respostas, passos: MAX_PASSOS };
+}
+
+// Depois de clicar no envio final, qualquer fim conta como "enviada": tentar de novo seria candidatura dupla.
+async function agir(opcoes) {
+  const estado = {};
+  const r = await agirBase({ ...opcoes, estado });
+  if (estado.enviouFinal && !['enviada', 'simulada'].includes(r.resultado)) {
+    return { ...r, resultado: 'enviada', motivo: `Cliquei em "${estado.enviouFinal}" (envio), mas não vi a mensagem de confirmação: confira em "Minhas candidaturas" do site` };
+  }
+  return r;
 }
 
 module.exports = { agir, lerBotoes, trocarMarcadores, montarPrompt, FINAL, PROIBIDO };
