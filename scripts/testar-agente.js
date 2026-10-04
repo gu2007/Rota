@@ -91,7 +91,7 @@ async function main() {
     const gravar = async (achadas, origem) => { let novas = 0; for (const v of achadas) { const r = await registrarVaga(repo, v, { origem_plataforma: origem, origem_coleta: origem === 'gupy_portal' ? 'busca' : 'site' }).catch(() => ({})); if (r.nova) novas++; } return novas; };
     if (quer('gupy')) {
       console.log('  Buscando vagas novas no portal da Gupy...');
-      const achadas = await portalGupy.coletar({ config, log: async () => {} }).catch(() => []);
+      const achadas = await portalGupy.coletar({ config, log: async () => {} }).catch((e) => { console.log(`      erro: ${e.message}`); return []; });
       console.log(`      ${achadas.length} vagas achadas, ${await gravar(achadas, 'gupy_portal')} novas.\n`);
     }
     if (quer('catho')) {
@@ -164,6 +164,8 @@ async function main() {
         continue;
       }
       const chegou = ['simulada', 'enviada'].includes(r.resultado);
+      // testada: o próximo teste pega outra vaga (e no modo real ela é enviada pelo npm run rodar)
+      if (chegou) await repo.vagas.atualizar(vaga.id, { status: 'testada', motivo_status: r.motivo });
       console.log(`      => ${chegou ? 'CHEGOU NO BOTÃO FINAL' : 'NÃO TERMINOU'} em ${r.passos} passos — ${r.motivo}`);
       for (const x of r.respostas || []) console.log(`         • ${String(x.pergunta).slice(0, 70)} → ${String(x.resposta).slice(0, 60)}`);
       if (vazios.length) console.log(`         obrigatórios que ficaram vazios: ${vazios.slice(0, 6).join(' | ')}`);

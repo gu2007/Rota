@@ -1,6 +1,20 @@
 // Coleta pelo job board público da Gupy: JSON, sem login nem navegador.
 
-const ENDPOINT = 'https://employability-portal.gupy.io/api/v1/jobs';
+// A Gupy trocou o endereço (o antigo dá 404 desde out/2026). O novo é o que o portal.gupy.io usa;
+// o antigo fica de reserva caso voltem atrás.
+const ENDPOINTS = ['https://portal.gupy.io/api/job-search/jobs', 'https://employability-portal.gupy.io/api/v1/jobs'];
+const CABECALHOS = { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36', Referer: 'https://portal.gupy.io/' };
+
+// tenta os endereços na ordem; devolve o JSON do primeiro que responder
+async function pedir(query, fetchFn) {
+  let erro = null;
+  for (const base of ENDPOINTS) {
+    const resp = await fetchFn(`${base}?${query}`, { headers: CABECALHOS }).catch((e) => { erro = e.message; return null; });
+    if (resp?.ok) return resp.json();
+    if (resp) erro = `${resp.status}`;
+  }
+  throw new Error(`Portal Gupy não respondeu (${erro})`);
+}
 const POR_PAGINA = 30;
 const MAX_PAGINAS = 3; // até 90 vagas por termo
 
@@ -19,7 +33,7 @@ function converter(job) {
     url: job.jobUrl,
     titulo: job.name,
     empresa: job.careerPageName || null,
-    local: job.isRemoteWork && !local ? 'Remoto' : local,
+    local: (job.isRemoteWork || job.workplaceType === 'remote') && !local ? 'Remoto' : local,
     modelo: MODELOS[job.workplaceType] || (job.isRemoteWork ? 'remoto' : null),
     descricao: semHtml(job.description).slice(0, 8000),
     plataforma_envio: 'gupy',
@@ -29,10 +43,7 @@ function converter(job) {
 async function buscar(termo, fetchFn) {
   const todos = [];
   for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
-    const url = `${ENDPOINT}?jobName=${encodeURIComponent(termo)}&limit=${POR_PAGINA}&offset=${pagina * POR_PAGINA}`;
-    const resp = await fetchFn(url, { headers: { Accept: 'application/json' } });
-    if (!resp.ok) throw new Error(`Portal Gupy respondeu ${resp.status} para "${termo}"`);
-    const corpo = await resp.json();
+    const corpo = await pedir(`jobName=${encodeURIComponent(termo)}&limit=${POR_PAGINA}&offset=${pagina * POR_PAGINA}`, fetchFn);
     const dados = Array.isArray(corpo.data) ? corpo.data : [];
     todos.push(...dados);
     if (dados.length < POR_PAGINA) break;
@@ -49,7 +60,7 @@ async function coletar(ctx, { fetchFn = fetch, agora = new Date() } = {}) {
     const jobs = await buscar(termo, fetchFn);
     for (const job of jobs) {
       if (!job.jobUrl || !job.name || vistos.has(job.id)) continue;
-      if (job.applicationDeadline && new Date(`${job.applicationDeadline}T23:59:59`) < agora) continue;
+      if (job.applicationDeadline && new Date(`${String(job.applicationDeadline).slice(0, 10)}T23:59:59`) < agora) continue;
       vistos.set(job.id, converter(job));
     }
     await new Promise((r) => setTimeout(r, 1500 + Math.random() * 2500));
@@ -63,10 +74,7 @@ async function coletar(ctx, { fetchFn = fetch, agora = new Date() } = {}) {
 async function completarPorId(jobId, titulo, { fetchFn = fetch } = {}) {
   if (!jobId || !titulo) return null;
   try {
-    const url = `${ENDPOINT}?jobName=${encodeURIComponent(String(titulo).slice(0, 80))}&limit=${POR_PAGINA}&offset=0`;
-    const resp = await fetchFn(url, { headers: { Accept: 'application/json' } });
-    if (!resp.ok) return null;
-    const corpo = await resp.json();
+    const corpo = await pedir(`jobName=${encodeURIComponent(String(titulo).slice(0, 80))}&limit=${POR_PAGINA}&offset=0`, fetchFn);
     const job = (Array.isArray(corpo.data) ? corpo.data : []).find((j) => String(j.id) === String(jobId));
     return job ? converter(job) : null;
   } catch { return null; }
