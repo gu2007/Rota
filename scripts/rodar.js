@@ -20,6 +20,7 @@ const webBusca = require('../src/coleta/web-busca');
 const { observar } = require('../src/candidatura/observador');
 const ia = require('../src/ia/gemini');
 const { jaCandidatada } = require('../src/agendador/repetidas');
+const { garantirLogins } = require('../src/navegador/sessoes');
 
 const ARQUIVO_ESTADO = path.join(__dirname, '..', 'dados', 'rodar-estado.json');
 const MINUTO = 60 * 1000;
@@ -100,7 +101,8 @@ async function main() {
       }
       case 'infojobs': {
         const nav = await abrirNavegador();
-        try { return { vagas: await infojobsBusca.buscar(nav.pagina, { termos: config.termosBusca, maxDias: config.maxDias, log }), coleta: 'site' }; }
+        const cidade = String(config.localizacao || 'São Paulo').split(';')[0].split(',')[0].trim();
+        try { return { vagas: await infojobsBusca.buscar(nav.pagina, { termos: config.termosBusca, maxDias: config.maxDias, cidade, log }), coleta: 'site' }; }
         finally { await nav.fechar().catch(() => {}); }
       }
       case 'indeed': return { vagas: await indeed.coletar(ctx, { porVez: 0 }), coleta: 'site' };
@@ -172,11 +174,18 @@ async function main() {
   console.log(`  Fontes: ${FONTES.map((f) => `${f.nome} (a cada ${f.a_cada >= 60 ? `${f.a_cada / 60}h` : `${f.a_cada} min`})`).join(' · ')}\n`);
 
   const pausadas = new Map(); // plataforma de candidatura -> até quando (CAPTCHA)
+  let ultimoLogin = 0;
   while (!parar) {
     const ctx = await montarContexto().catch(() => null);
     if (!ctx) { await espera(MINUTO); continue; }
     for (const [p, ate] of pausadas) if (Date.now() > ate) pausadas.delete(p);
 
+    // 0) entra no InfoJobs/Catho antes de buscar e se candidatar (a cada 6 h confere de novo)
+    if (Date.now() - ultimoLogin > 6 * 60 * MINUTO) {
+      console.log(`\n  ${hora()} Entrando nas plataformas (InfoJobs, Catho)...`);
+      await garantirLogins({ log }).catch((e) => log('erro', 'login', e.message));
+      ultimoLogin = Date.now();
+    }
     // 1) busca nas fontes que estão na hora
     const estado = lerEstado();
     for (const fonte of FONTES) {

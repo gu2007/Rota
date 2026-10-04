@@ -18,6 +18,7 @@ const { agir } = require('../src/agente/agente');
 const ia = require('../src/ia/gemini');
 const { conferirArea } = require('../src/ia/conferir-area');
 const { areaPorRegras } = require('../src/ia/pontuador');
+const { garantirLogins } = require('../src/navegador/sessoes');
 
 const GRUPOS = [
   { nome: 'Gupy', filtro: (v) => v.plataforma_envio === 'gupy' },
@@ -66,6 +67,9 @@ async function main() {
   }
   if (!filas.length) { console.log('\n  Nada para testar.\n'); return repo.encerrar(); }
   console.log('\n  O Chrome vai abrir: não mexa nele.\n');
+  console.log('  Entrando nas plataformas antes (InfoJobs, Catho)...');
+  const sessoes = await garantirLogins({ log: async (n, o, m) => { if (o === 'login') console.log(`      ${m}`); } }).catch(() => ({}));
+  console.log();
 
   const pastaBase = path.join(__dirname, '..', 'dados', 'agente', new Date().toISOString().replace(/[:.]/g, '-'));
   const relatorio = [];

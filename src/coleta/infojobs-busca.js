@@ -41,10 +41,14 @@ function lerCartoes() {
     });
 }
 
-async function buscar(pagina, { termos, maxDias = 2, log = async () => {} }) {
+const semAcento = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+// "estágio desenvolvedor" em "São Paulo" -> /vagas-de-emprego-estagio+desenvolvedor-em-sao-paulo,-sp.aspx
+const urlBusca = (termo, cidade) => `https://www.infojobs.com.br/vagas-de-emprego-${semAcento(termo).replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, '+')}${cidade ? `-em-${semAcento(cidade).replace(/\s+/g, '-')},-sp` : ''}.aspx?campo=griddate&orden=desc`;
+
+async function buscar(pagina, { termos, maxDias = 2, cidade = 'São Paulo', log = async () => {} }) {
   const porUrl = new Map();
   for (const termo of termos) {
-    const url = `${BASE}?palabra=${encodeURIComponent(termo)}&campo=griddate&orden=desc`;
+    const url = urlBusca(termo, cidade);
     try {
       await pagina.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
       await pausa(2500, 4500);
@@ -57,6 +61,8 @@ async function buscar(pagina, { termos, maxDias = 2, log = async () => {} }) {
         const dias = diasDesde(c.data);
         if (dias != null && maxDias != null && dias > maxDias) continue;
         const modelo = /h[ií]brido/i.test(c.modelo || '') ? 'hibrido' : /remoto|home/i.test(c.modelo || '') ? 'remoto' : c.modelo ? 'presencial' : null;
+        // outra cidade só serve se for 100% remoto
+        if (cidade && modelo !== 'remoto' && c.local && semAcento(c.local.split(' - ')[0]) !== semAcento(cidade)) continue;
         porUrl.set(c.url, {
           url: c.url, titulo: c.titulo, empresa: c.empresa, modelo,
           local: c.local ? c.local.replace(/ - ([A-Z]{2})$/, ', $1') : null,
@@ -72,4 +78,4 @@ async function buscar(pagina, { termos, maxDias = 2, log = async () => {} }) {
   return [...porUrl.values()];
 }
 
-module.exports = { buscar, diasDesde, lerCartoes };
+module.exports = { buscar, diasDesde, lerCartoes, urlBusca };

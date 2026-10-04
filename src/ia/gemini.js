@@ -257,7 +257,7 @@ async function planejarFormulario({ campos, contexto, vaga }, { fetchFn = fetch 
 
 // Portão final antes de candidatar: a vaga é mesmo de tecnologia na área que o candidato quer?
 // Devolve { ti: true|false, area, motivo } ou null se a IA não respondeu
-async function classificarVaga({ titulo, empresa, descricao, incluirSuporte = false, aceitaJunior = false }, { fetchFn = fetch } = {}) {
+async function classificarVaga({ titulo, empresa, local, descricao, cidade = 'São Paulo', incluirSuporte = false, aceitaJunior = false }, { fetchFn = fetch } = {}) {
   if (!disponivel()) return null;
   const prompt = [
     'Você filtra vagas para um estudante de Sistemas de Informação (2º semestre) que quer SOMENTE vagas de tecnologia.',
@@ -268,8 +268,9 @@ async function classificarVaga({ titulo, empresa, descricao, incluirSuporte = fa
     'Decida pela DESCRIÇÃO (atividades e requisitos), nunca só pelo título: "Estágio TI" que é atender chamados é suporte; "Estágio de Dados" que é Excel/planilha/relatório de negócio é área de negócio.',
     'ti: true SOMENTE se a descrição pedir pelo menos 2 coisas técnicas concretas do dia a dia (ex.: programar em uma linguagem, APIs, SQL/banco de dados, cloud/AWS/Azure, Git, frameworks, pipelines de dados). Liste essas evidências.',
     'Sem descrição (ou só o título): ti: false, motivo "sem descrição para conferir".',
-    'Responda SOMENTE um JSON: {"ti": true|false, "area": "<área em poucas palavras>", "evidencias": ["<requisito técnico citado>", ...], "motivo": "<frase curta>"}',
-    `VAGA: ${titulo || ''} — ${empresa || ''}\n${String(descricao || '(sem descrição)').slice(0, 6000)}`,
+    `LOCAL: o candidato mora em ${cidade} (capital). local_ok: true só se a vaga for na cidade de ${cidade} (capital) ou 100% remota. Presencial ou híbrida em outra cidade (ex.: Barueri, Osasco, Guarulhos, São Bernardo, Campinas, outro estado): local_ok: false. Local não informado: local_ok: true.`,
+    'Responda SOMENTE um JSON: {"ti": true|false, "area": "<área em poucas palavras>", "evidencias": ["<requisito técnico citado>", ...], "local": "<cidade e modelo da vaga>", "local_ok": true|false, "motivo": "<frase curta>"}',
+    `VAGA: ${titulo || ''} — ${empresa || ''}${local ? ` — ${local}` : ''}\n${String(descricao || '(sem descrição)').slice(0, 6000)}`,
   ].join('\n\n');
   const texto = await chamar(prompt, { temperatura: 0, json: true, fetchFn }).catch(() => null);
   if (!texto) return null;
@@ -279,7 +280,7 @@ async function classificarVaga({ titulo, empresa, descricao, incluirSuporte = fa
     const evidencias = Array.isArray(r.evidencias) ? r.evidencias.map((e) => String(e).slice(0, 60)).slice(0, 6) : [];
     // a IA disse que é TI mas não achou nada técnico na descrição: não confia
     const ti = r.ti && evidencias.length >= 2;
-    return { ti, area: String(r.area || '').slice(0, 80), evidencias, motivo: ti || !r.ti ? String(r.motivo || '').slice(0, 200) : 'a descrição não cita requisitos técnicos (linguagem, SQL, cloud...)' };
+    return { ti, area: String(r.area || '').slice(0, 80), evidencias, localOk: r.local_ok !== false, local: String(r.local || '').slice(0, 80), motivo: ti || !r.ti ? String(r.motivo || '').slice(0, 200) : 'a descrição não cita requisitos técnicos (linguagem, SQL, cloud...)' };
   } catch { return null; }
 }
 

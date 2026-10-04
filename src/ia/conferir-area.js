@@ -5,7 +5,7 @@
 const { areaPorRegras } = require('./pontuador');
 const ia = require('./gemini');
 
-const CONFIRMADA = 'TI conferida na descrição'; // (as antigas "TI confirmada" são conferidas de novo)
+const CONFIRMADA = 'TI e cidade conferidas'; // (as antigas "TI confirmada" são conferidas de novo)
 
 async function conferirArea(vaga, { config = {} } = {}) {
   if (vaga.origem_coleta === 'manual') return { ok: true, motivo: 'vaga escolhida por você', fonte: 'manual' };
@@ -14,9 +14,11 @@ async function conferirArea(vaga, { config = {} } = {}) {
   if (String(vaga.justificativa || '').includes(CONFIRMADA)) return { ok: true, motivo: CONFIRMADA, fonte: 'anterior' };
   if (ia.disponivel()) {
     const r = await ia.classificarVaga({
-      titulo: vaga.titulo, empresa: vaga.empresa, descricao: vaga.descricao,
+      titulo: vaga.titulo, empresa: vaga.empresa, local: vaga.local, descricao: vaga.descricao,
+      cidade: String(config.localizacao || 'São Paulo').split(';')[0].split(',')[0].trim() || 'São Paulo',
       incluirSuporte: !!config.incluirSuporte, aceitaJunior: !!config.aceitaJunior,
     }).catch(() => null);
+    if (r && !r.localOk) return { ok: false, motivo: `Fora da sua cidade: ${r.local || 'outra cidade'} (você aceita ${config.localizacao || 'São Paulo'} ou remoto)`, fonte: 'ia' };
     if (r) return r.ti
       ? { ok: true, motivo: `${CONFIRMADA} pela IA (${r.area}: ${r.evidencias.slice(0, 3).join(', ')})`, fonte: 'ia' }
       : { ok: false, motivo: `A IA viu que não é de tecnologia: ${r.area}${r.motivo ? ` — ${r.motivo}` : ''}`, fonte: 'ia' };
