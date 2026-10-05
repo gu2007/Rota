@@ -72,7 +72,7 @@ async function pedirAoGemini({ prompt, imagem }, { fetchFn = fetch } = {}) {
   const modelo = process.env.GEMINI_MODELO_AGENTE || process.env.GEMINI_MODELO || 'gemini-3.8-flash';
   const corpo = {
     contents: [{ role: 'user', parts: [{ text: prompt }, ...(imagem ? [{ inline_data: { mime_type: 'image/jpeg', data: imagem } }] : [])] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: 'application/json' },
+    generationConfig: { temperature: 0.2, maxOutputTokens: 6144, responseMimeType: 'application/json' },
   };
   const ESPERAS = [15000, 60000, 90000]; // o plano grátis tem limite por minuto
   let ultimoErro = '';
@@ -112,14 +112,14 @@ function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, mo
     '- NUNCA crie conta, nunca clique em cadastrar-se/criar conta, nunca resolva CAPTCHA ("não sou robô"): nesses casos, status "ajuda".',
     '- Teste de perfil, jogo, teste comportamental ou técnico: status "ajuda".',
     '- Se a página disser que o candidato já se candidatou a esta vaga: status "ja_candidatado".',
-    '- Candidate-se SOMENTE à VAGA indicada abaixo. Se a página mostrar uma lista de vagas, outra vaga ou "vaga encerrada": status "ajuda" (nunca escolha outra vaga).',
+    '- Candidate-se SOMENTE à VAGA indicada abaixo (confira pelo CARGO). Se a página mostrar uma lista de várias vagas, um cargo diferente ou "vaga encerrada": status "ajuda" (nunca escolha outra vaga). O nome da EMPRESA pode ser diferente (recrutadora, consultoria, razão social ou nome fantasia): isso não é motivo para parar.',
     modoTeste
       ? '- MODO TESTE: quando tudo estiver preenchido e o próximo passo for o envio final da candidatura, NÃO clique: responda status "pronto_para_enviar".'
       : '- Quando tudo estiver preenchido, clique no botão de envio final e marque "final": true nessa ação.',
     '- Botões "Continuar", "Próximo", "Salvar e continuar" avançam etapas (não são o envio final). Marque "final": true só no clique que ENVIA a candidatura.',
     '- Campo recusado (mensagem de erro): corrija com outro formato (ex.: telefone com ou sem +55, data DD/MM/AAAA).',
     '- Campos opcionais sem informação verdadeira: deixe em branco.',
-    'Formato da resposta (JSON): {"pensamento":"<curto>","acoes":[{"acao":"preencher","id":"c3","valor":"..."},{"acao":"clicar","id":"b2","final":false},{"acao":"login"},{"acao":"login_social"},{"acao":"rolar"},{"acao":"esperar"}],"status":"continuar|pronto_para_enviar|enviado|ja_candidatado|logado|ajuda","motivo":"<se ajuda: o que falta>"}',
+    'Formato da resposta (JSON, sem texto fora dele): {"pensamento":"<UMA frase curta>","acoes":[{"acao":"preencher","id":"c3","valor":"..."},{"acao":"clicar","id":"b2","final":false},{"acao":"login"},{"acao":"login_social"},{"acao":"rolar"},{"acao":"esperar"}],"status":"continuar|pronto_para_enviar|enviado|ja_candidatado|logado|ajuda","motivo":"<se ajuda: o que falta>"}',
     `VAGA: ${vaga?.titulo || ''} — ${vaga?.empresa || ''}`,
     `DADOS DO CANDIDATO\n${candidato}`,
     `PÁGINA: ${tela.titulo} — ${tela.url}`,

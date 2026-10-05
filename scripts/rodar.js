@@ -22,6 +22,7 @@ const { observar } = require('../src/candidatura/observador');
 const ia = require('../src/ia/gemini');
 const { jaCandidatada } = require('../src/agendador/repetidas');
 const { garantirLogins } = require('../src/navegador/sessoes');
+const { candidatarComAgente } = require('../src/agente/candidatura');
 
 const ARQUIVO_ESTADO = path.join(__dirname, '..', 'dados', 'rodar-estado.json');
 const MINUTO = 60 * 1000;
@@ -160,7 +161,12 @@ async function main() {
       observado = await observar(contexto, pagina, { log: (m) => console.log(m), salvarPessoais: (p) => repo.pessoais.salvar(p) });
       return observado;
     };
-    const r = await modulos[plataforma].candidatar(vaga, ctx, { aoTravar });
+    // o agente de IA faz a candidatura inteira (nos testes ele foi bem melhor que as regras);
+    // a Candidatura simplificada do LinkedIn tem módulo próprio por causa do limite diário
+    const r = plataforma === 'linkedin_easy'
+      ? await modulos.linkedin_easy.candidatar(vaga, ctx, { aoTravar })
+      : await candidatarComAgente(vaga, ctx, { aoTravar });
+    if (r.resultado === 'candidatada_antes') { r.resultado = 'pulada'; r.motivo = `Você já se candidatou a esta vaga${r.motivo ? ` (${r.motivo})` : ''}`; }
     if (r.adiar) { // limite diário (Easy Apply): a vaga volta para a fila e a plataforma descansa até amanhã
       await repo.vagas.atualizar(vaga.id, { status: 'na_fila', motivo_status: r.motivo });
       console.log(`     = ${r.motivo}`);
