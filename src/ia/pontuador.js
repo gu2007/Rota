@@ -148,4 +148,7 @@ function areaPorRegras(vaga) {
   return { ok: false, motivo: 'Nem o título nem a descrição mostram que a vaga é de tecnologia' };
 }
 
-module.exports = { pontuar, normalizar, limparTitulo, areaPorRegras };
+// o título fala de tecnologia? (para sites cuja busca devolve de tudo quando acha pouco, como a Catho)
+const tituloDeTI = (titulo) => { const t = normalizar(limparTitulo(titulo)); return TI_TITULO.test(t) || TI_FRACO.test(t) || /program|sistema|informat/.test(t); };
+
+module.exports = { pontuar, normalizar, limparTitulo, areaPorRegras, tituloDeTI };

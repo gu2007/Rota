@@ -3,6 +3,7 @@
 const { pausa } = require('../navegador/navegador');
 const { temDesafio } = require('../candidatura/leitor-pagina');
 const { aceitarCookies } = require('../navegador/cookies');
+const { tituloDeTI } = require('../ia/pontuador');
 
 const semAcento = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
 const slug = (t) => semAcento(t).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -48,7 +49,8 @@ async function buscar(pagina, { termos, maxDias = 2, cidade = 'São Paulo', log 
       await aceitarCookies(pagina);
       if (await pagina.evaluate(temDesafio).catch(() => null)) { await log('aviso', 'catho', 'A Catho pediu verificação anti-robô: busca parada por agora.'); break; }
       for (const c of await pagina.evaluate(lerCartoes).catch(() => [])) {
-        if (!c.titulo) continue;
+        // quando acha pouca coisa, a Catho completa a lista com vagas de qualquer área: só fica título de TI
+        if (!c.titulo || !tituloDeTI(c.titulo)) continue;
         const dias = diasDesde(c.data);
         if (dias != null && maxDias != null && dias > maxDias) continue;
         const remoto = /home office|remot|work from home/i.test(`${c.titulo} ${c.local}`);

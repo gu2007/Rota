@@ -20,7 +20,7 @@ const gupy = require('../src/plataformas/gupy');
 const { agir } = require('../src/agente/agente');
 const ia = require('../src/ia/gemini');
 const { conferirArea } = require('../src/ia/conferir-area');
-const { areaPorRegras } = require('../src/ia/pontuador');
+const { areaPorRegras, tituloDeTI } = require('../src/ia/pontuador');
 const { garantirLogins } = require('../src/navegador/sessoes');
 const infojobsBusca = require('../src/coleta/infojobs-busca');
 const linkedin = require('../src/plataformas/linkedin');
@@ -34,7 +34,7 @@ const GRUPOS = [
   { nome: 'Easy Apply', filtro: (v) => v.plataforma_envio === 'linkedin_easy' || (v.status === 'para_voce' && /^Candidatura simplificada/.test(v.motivo_status || '')) },
   { nome: 'Gupy', filtro: (v) => v.plataforma_envio === 'gupy' },
   { nome: 'InfoJobs', filtro: (v) => v.plataforma_envio === 'infojobs' },
-  { nome: 'Catho', filtro: (v) => /catho\.com/.test(v.url_candidatura || v.url) },
+  { nome: 'Catho', filtro: (v) => /catho\.com/.test(v.url_candidatura || v.url) && tituloDeTI(v.titulo) },
   { nome: 'Site de empresa', filtro: (v) => v.plataforma_envio === 'sites' && !/catho\.com/.test(v.url_candidatura || v.url) },
 ];
 const NAO_SERVE = /não é de tecnologia|fora de TI|já se candidatou|repetida|Mesma vaga|encerrad|não está mais dispon/i;
