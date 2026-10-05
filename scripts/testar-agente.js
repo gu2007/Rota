@@ -46,6 +46,7 @@ async function main() {
   const log = async (nivel, origem, msg) => { if (origem === 'agente') console.log(`      ${msg}`); };
   // "enviar": uma candidatura de verdade, com confirmação (o PowerShell engole o "--", por isso é uma palavra)
   const enviar = process.argv.slice(2).includes('enviar');
+  const quantidade = Number(process.argv.slice(2).find((a) => /^\d+$/.test(a) && Number(a) <= 50)) || (process.argv.slice(2).includes('lote') ? 10 : 1);
   const config = { ...lerConfiguracoes(await repo.config.obter()), modoTeste: !enviar };
   const listas = {};
   for (const nome of Object.keys(LISTAS)) listas[nome] = await repo.listas.listar(nome);
@@ -56,14 +57,13 @@ async function main() {
     aprendidas: Object.values(memoria.respostas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) })),
   };
   console.log(enviar
-    ? '\n=== Rota · agente de IA: UMA candidatura DE VERDADE (vou pedir confirmação antes) ===\n'
+    ? `\n=== Rota · agente de IA: ${quantidade > 1 ? `até ${quantidade} candidaturas` : 'UMA candidatura'} DE VERDADE (vou pedir confirmação antes) ===\n`
     : '\n=== Rota · teste "só IA": o agente faz a candidatura inteira (modo teste: NADA é enviado) ===\n');
   if (!ia.disponivel()) { console.log('  Precisa da GEMINI_API_KEY no .env.\n'); return repo.encerrar(); }
 
   // filas de candidatas por plataforma
   const args = process.argv.slice(2);
   // número pequeno (até 50) é a quantidade; número grande é o nº de uma vaga
-  const quantidade = Number(args.find((a) => /^\d+$/.test(a) && Number(a) <= 50)) || (args.includes('lote') ? 10 : 1);
   const ids = args.filter((a) => /^\d+$/.test(a) && Number(a) > 50).map(Number);
   const filas = [];
   if (ids.length) {
