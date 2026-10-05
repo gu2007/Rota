@@ -41,7 +41,9 @@ async function buscar(pagina, { termos, maxDias = 2, cidade = 'São Paulo', log 
   const porUrl = new Map();
   for (const termo of termos) {
     try {
-      await pagina.goto(urlBusca(termo, cidade), { waitUntil: 'domcontentloaded', timeout: 45000 });
+      // filtro "Data de publicação" da Catho: 1 = dois dias, 2 = três dias, 7 = semana, 15 = quinze dias
+      const lastdays = maxDias <= 2 ? 1 : maxDias <= 3 ? 2 : maxDias <= 7 ? 7 : 15;
+      await pagina.goto(`${urlBusca(termo, cidade)}?lastdays=${lastdays}`, { waitUntil: 'domcontentloaded', timeout: 45000 });
       await pausa(2500, 4500);
       await aceitarCookies(pagina);
       if (await pagina.evaluate(temDesafio).catch(() => null)) { await log('aviso', 'catho', 'A Catho pediu verificação anti-robô: busca parada por agora.'); break; }

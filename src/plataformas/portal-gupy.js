@@ -40,10 +40,11 @@ function converter(job) {
   };
 }
 
-async function buscar(termo, fetchFn) {
+// filtros: "&type=vacancy_type_internship&state=São Paulo&city=São Paulo" (os mesmos do site)
+async function buscar(termo, fetchFn, filtros = '') {
   const todos = [];
   for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
-    const corpo = await pedir(`jobName=${encodeURIComponent(termo)}&limit=${POR_PAGINA}&offset=${pagina * POR_PAGINA}`, fetchFn);
+    const corpo = await pedir(`jobName=${encodeURIComponent(termo)}${filtros}&limit=${POR_PAGINA}&offset=${pagina * POR_PAGINA}`, fetchFn);
     const dados = Array.isArray(corpo.data) ? corpo.data : [];
     todos.push(...dados);
     if (dados.length < POR_PAGINA) break;
@@ -56,8 +57,16 @@ async function coletar(ctx, { fetchFn = fetch, agora = new Date() } = {}) {
   const termos = ctx.config.termosBusca.length ? ctx.config.termosBusca : ['estágio desenvolvedor'];
   const vistos = new Map();
 
-  for (const termo of termos) {
-    const jobs = await buscar(termo, fetchFn);
+  // o filtro de estágio é do próprio portal: o termo fica só com a área ("estágio desenvolvedor" -> "desenvolvedor")
+  const soEstagio = !ctx.config.aceitaJunior;
+  const area = [...new Set(termos.map((t) => String(t).replace(/est[aá]gio|estagi[aá]ri[oa]/gi, '').trim()).filter(Boolean))];
+  const busca = soEstagio && area.length ? area : termos;
+  const cidade = String(ctx.config.localizacao || 'São Paulo').split(';')[0].split(',')[0].trim();
+  const tipo = soEstagio ? '&type=vacancy_type_internship' : '';
+  const naCidade = `${tipo}&state=${encodeURIComponent(cidade === 'São Paulo' ? 'São Paulo' : '')}&city=${encodeURIComponent(cidade)}`;
+  for (const termo of busca) {
+    // 1) na sua cidade; 2) remotas de qualquer lugar
+    const jobs = [...await buscar(termo, fetchFn, naCidade), ...(await buscar(termo, fetchFn, tipo).catch(() => [])).filter((j) => j.workplaceType === 'remote')];
     for (const job of jobs) {
       if (!job.jobUrl || !job.name || vistos.has(job.id)) continue;
       if (job.applicationDeadline && new Date(`${String(job.applicationDeadline).slice(0, 10)}T23:59:59`) < agora) continue;
@@ -66,7 +75,7 @@ async function coletar(ctx, { fetchFn = fetch, agora = new Date() } = {}) {
     await new Promise((r) => setTimeout(r, 1500 + Math.random() * 2500));
   }
 
-  await ctx.log('info', 'gupy_portal', `Portal Gupy: ${vistos.size} vagas encontradas em ${termos.length} buscas.`);
+  await ctx.log('info', 'gupy_portal', `Portal Gupy: ${vistos.size} vagas de ${soEstagio ? 'estágio ' : ''}em ${cidade} ou remotas, em ${busca.length} buscas.`);
   return [...vistos.values()];
 }
 

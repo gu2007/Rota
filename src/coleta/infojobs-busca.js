@@ -45,10 +45,16 @@ const semAcento = (t) => String(t || '').toLowerCase().normalize('NFD').replace(
 // "estágio desenvolvedor" em "São Paulo" -> /vagas-de-emprego-estagio+desenvolvedor-em-sao-paulo,-sp.aspx
 const urlBusca = (termo, cidade) => `https://www.infojobs.com.br/vagas-de-emprego-${semAcento(termo).replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, '+')}${cidade ? `-em-${semAcento(cidade).replace(/\s+/g, '-')},-sp` : ''}.aspx?campo=griddate&orden=desc`;
 
+// área "Informática, TI, Telecomunicações" no filtro do InfoJobs (testado: ?categoria=74)
+const CATEGORIA_TI = 74;
+
 async function buscar(pagina, { termos, maxDias = 2, cidade = 'São Paulo', log = async () => {} }) {
   const porUrl = new Map();
-  for (const termo of termos) {
-    const url = urlBusca(termo, cidade);
+  // com o filtro de área do site, basta procurar "estágio": todas já são de TI
+  const busca = [...new Set(['estagio', ...termos.filter((t) => !/^est[aá]gio\s/i.test(t))])];
+  termos = busca;
+  for (const termo of busca) {
+    const url = `${urlBusca(termo, cidade)}&categoria=${CATEGORIA_TI}`;
     try {
       await pagina.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
       await pausa(2500, 4500);
