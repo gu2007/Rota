@@ -187,6 +187,7 @@ async function main() {
       }
       const chegou = ['simulada', 'enviada'].includes(r.resultado);
       // testada: o próximo teste pega outra vaga (e no modo real ela é enviada pelo npm run rodar)
+      if (r.resultado === 'ja_candidatado') await repo.vagas.atualizar(vaga.id, { status: 'candidatada', motivo_status: r.motivo });
       if (r.resultado === 'enviada') {
         await repo.vagas.atualizar(vaga.id, { status: 'candidatada', motivo_status: r.motivo });
         await repo.candidaturas.registrar({ vaga_id: vaga.id, plataforma: vaga.plataforma_envio || 'sites', resultado: 'enviada', modo_teste: false, motivo: r.motivo, respostas: r.respostas || [] });

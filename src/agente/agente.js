@@ -74,17 +74,23 @@ async function pedirAoGemini({ prompt, imagem }, { fetchFn = fetch } = {}) {
     contents: [{ role: 'user', parts: [{ text: prompt }, ...(imagem ? [{ inline_data: { mime_type: 'image/jpeg', data: imagem } }] : [])] }],
     generationConfig: { temperature: 0.2, maxOutputTokens: 2048, responseMimeType: 'application/json' },
   };
-  for (let tentativa = 0; tentativa < 2; tentativa++) {
-    const resp = await fetchFn(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, body: JSON.stringify(corpo),
-    });
-    if (resp.status === 429 && tentativa === 0) { await new Promise((r) => setTimeout(r, 60000)); continue; } // limite por minuto do plano grátis
+  const ESPERAS = [15000, 60000, 90000]; // o plano grátis tem limite por minuto
+  let ultimoErro = '';
+  for (let tentativa = 0; tentativa <= ESPERAS.length; tentativa++) {
+    if (tentativa) await new Promise((r) => setTimeout(r, ESPERAS[tentativa - 1]));
+    let resp;
+    try {
+      resp = await fetchFn(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY }, body: JSON.stringify(corpo),
+      });
+    } catch (e) { ultimoErro = `sem conexão (${e.message})`; continue; }
+    if (resp.status === 429 || resp.status >= 500) { ultimoErro = `${resp.status}${resp.status === 429 ? ' limite de uso' : ''}`; continue; }
     if (!resp.ok) throw new Error(`Gemini recusou (${resp.status}): ${(await resp.text()).slice(0, 160)}`);
     const dados = await resp.json();
     const texto = (dados.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
-    return JSON.parse(texto.replace(/^```(json)?|```$/g, '').trim());
+    try { return JSON.parse(texto.replace(/^```(json)?|```$/g, '').trim()); } catch { ultimoErro = 'resposta fora do formato'; continue; }
   }
-  throw new Error('Gemini: limite de uso atingido (plano grátis). Tento de novo mais tarde.');
+  throw new Error(`Gemini não respondeu depois de 4 tentativas (${ultimoErro})`);
 }
 
 function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, modoTeste, temLogin, inicio, objetivo }) {
@@ -158,8 +164,12 @@ async function agirBase({ pagina, contexto, ctx, vaga, preencherFn, log = async 
     if (await pagina.evaluate(temDesafio).catch(() => null)) return { resultado: 'pulada', motivo: 'o site pediu CAPTCHA/verificação anti-robô', respostas, passos: passo };
 
     if (objetivo === 'login' && logadoFn && await logadoFn(pagina).catch(() => false)) return { resultado: 'logado', motivo: 'conta conectada', respostas, passos: passo };
+    estado.pagina = pagina;
     const corpo = await pagina.innerText('body').catch(() => '');
-    if (SUCESSO.test(corpo) && !modoTeste) return { resultado: 'enviada', motivo: 'o agente de IA concluiu a candidatura', respostas, passos: passo };
+    if (estado.enviouFinal && SUCESSO.test(corpo)) return { resultado: 'enviada', motivo: 'o agente de IA enviou a candidatura', respostas, passos: passo };
+    if (!estado.enviouFinal && /voc[eê] j[aá] se candidatou|voc[eê] se candidatou|j[aá] candidatad|candidatura j[aá] (foi )?(realizada|enviada)/i.test(corpo.slice(0, 6000))) {
+      return { resultado: 'ja_candidatado', motivo: 'Você já se candidatou a esta vaga (a página diz)', respostas, passos: passo };
+    }
 
     const camposBrutos = await pagina.evaluate(lerCampos).catch(() => []);
     const campos = camposBrutos.filter((c) => c.rotulo || c.obrigatorio).slice(0, 60).map((c) => {
@@ -292,6 +302,10 @@ async function agir(opcoes) {
   const estado = {};
   const r = await agirBase({ ...opcoes, estado });
   if (estado.enviouFinal && !['enviada', 'simulada'].includes(r.resultado)) {
+    const vazios = estado.pagina && !estado.pagina.isClosed() ? await obrigatoriosVazios(estado.pagina) : [];
+    if (vazios.length) {
+      return { ...r, resultado: 'pulada', motivo: `Cliquei em "${estado.enviouFinal}" e o site abriu perguntas que ficaram sem resposta (${vazios.slice(0, 3).join(' | ').slice(0, 200)}): NÃO foi enviada. ${r.motivo || ''}`.trim() };
+    }
     return { ...r, resultado: 'enviada', motivo: `Cliquei em "${estado.enviouFinal}" (envio), mas não vi a mensagem de confirmação: confira em "Minhas candidaturas" do site` };
   }
   return r;
