@@ -112,6 +112,7 @@ function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, mo
     '- NUNCA crie conta, nunca clique em cadastrar-se/criar conta, nunca resolva CAPTCHA ("não sou robô"): nesses casos, status "ajuda".',
     '- Teste de perfil, jogo, teste comportamental ou técnico: status "ajuda".',
     '- Se a página disser que o candidato já se candidatou a esta vaga: status "ja_candidatado".',
+    '- Candidate-se SOMENTE à VAGA indicada abaixo. Se a página mostrar uma lista de vagas, outra vaga ou "vaga encerrada": status "ajuda" (nunca escolha outra vaga).',
     modoTeste
       ? '- MODO TESTE: quando tudo estiver preenchido e o próximo passo for o envio final da candidatura, NÃO clique: responda status "pronto_para_enviar".'
       : '- Quando tudo estiver preenchido, clique no botão de envio final e marque "final": true nessa ação.',
@@ -135,6 +136,16 @@ function montarPrompt({ vaga, candidato, marcadores, campos, tela, historico, mo
 // inicio: começa na página da vaga (teste "só IA"); pastaPrints: salva print e decisão de cada passo;
 // loginSocialFn: entra pelo botão do LinkedIn/Google (Gupy)
 // objetivo "login": só entra na conta (logadoFn diz quando conseguiu)
+// A vaga ainda é a mesma? Vaga encerrada costuma redirecionar para a busca (Catho: /vagas/estagio-de-programacao/)
+function mesmaVaga(urlAtual, urlVaga) {
+  try {
+    const a = new URL(urlAtual); const v = new URL(urlVaga);
+    if (a.hostname.replace(/^www\./, '') !== v.hostname.replace(/^www\./, '')) return true; // foi para outro site (ex.: Gupy da empresa): segue
+    const num = (u) => (u.pathname.match(/\d{5,}/g) || []).join('/');
+    return !num(v) || num(a) === num(v);
+  } catch { return true; }
+}
+
 async function agirBase({ pagina, contexto, ctx, vaga, preencherFn, log = async () => {}, pedirFn = pedirAoGemini, inicio = false, pastaPrints = null, loginSocialFn = null, objetivo = 'candidatura', logadoFn = null, estado = {} }) {
   if (!ia.disponivel()) return { resultado: 'pulada', motivo: 'agente de IA desligado (sem GEMINI_API_KEY)', respostas: [], passos: 0 };
   const modoTeste = !!ctx.config?.modoTeste;
@@ -162,6 +173,10 @@ async function agirBase({ pagina, contexto, ctx, vaga, preencherFn, log = async 
     await pagina.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
     await pausa(800, 1500);
     if (await pagina.evaluate(temDesafio).catch(() => null)) return { resultado: 'pulada', motivo: 'o site pediu CAPTCHA/verificação anti-robô', respostas, passos: passo };
+    // começo: se a página da vaga virou outra (lista de vagas), a vaga foi encerrada
+    if (inicio && passo === 1 && vaga?.url && objetivo !== 'login' && !mesmaVaga(pagina.url(), vaga.url_candidatura || vaga.url)) {
+      return { resultado: 'encerrada', motivo: 'Vaga encerrada: o site mandou para outra página (lista de vagas)', respostas, passos: passo };
+    }
 
     if (objetivo === 'login' && logadoFn && await logadoFn(pagina).catch(() => false)) return { resultado: 'logado', motivo: 'conta conectada', respostas, passos: passo };
     estado.pagina = pagina;
@@ -225,6 +240,9 @@ async function agirBase({ pagina, contexto, ctx, vaga, preencherFn, log = async 
             continue;
           }
           const umClique = UM_CLIQUE.test(new URL(pagina.url()).hostname) && BOTAO_CANDIDATAR.test(botao.texto);
+          if (umClique && tela.botoes.filter((b) => BOTAO_CANDIDATAR.test(b.texto) && !/candidatos$/i.test(b.texto)).length > 1 && !estado.enviouFinal) {
+            return { resultado: 'pulada', motivo: `A página tem vários botões "${botao.texto}" (é uma lista de vagas): não escolho sozinho para não me candidatar à vaga errada`, respostas, passos: passo };
+          }
           const final = objetivo !== 'login' && (a.final === true || FINAL.test(botao.texto) || umClique);
           if (final) {
             const vazios = await obrigatoriosVazios(pagina);
