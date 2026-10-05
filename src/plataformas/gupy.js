@@ -1160,7 +1160,9 @@ async function candidatar(vaga, ctx, { abrir = abrirNavegador, iaFn, planoFn, pl
         const ag = await agente({ pagina: viva, contexto: nav.contexto, ctx: { ...ctx, aprendidas: Object.values(memoria.respostas || {}).map((a) => ({ pergunta: a.pergunta, resposta: String(a.valor) })) }, vaga, preencherFn: preencher, log: ctx.log || (async () => {}) });
         respostas.push(...(ag.respostas || []));
         await ctx.log?.('info', 'agente', `Agente: ${ag.resultado} — ${ag.motivo} (${ag.passos} passos)`);
-        if (['simulada', 'enviada', 'ja_candidatado'].includes(ag.resultado)) {
+        if (ag.resultado === 'encerrada') {
+          Object.assign(ultimo, { resultado: 'descartada', motivo: ag.motivo, paraVoce: false, pendentes: [] });
+        } else if (['simulada', 'enviada', 'ja_candidatado'].includes(ag.resultado)) {
           Object.assign(ultimo, {
             resultado: ag.resultado === 'ja_candidatado' ? 'pulada' : ag.resultado, motivo: ag.motivo,
             paraVoce: false, pendentes: [], resolvidoPor: 'agente',

@@ -27,8 +27,11 @@ const linkedin = require('../src/plataformas/linkedin');
 const cathoBusca = require('../src/coleta/catho-busca');
 const portalGupy = require('../src/plataformas/portal-gupy');
 const { registrarVaga } = require('../src/agendador/executor');
+const { jaCandidatada } = require('../src/agendador/repetidas');
 
 const GRUPOS = [
+  // as que já chegaram até o fim no modo teste (npm run candidatar testadas)
+  { nome: 'Testadas', so: true, filtro: (v) => v.status === 'testada' && ['gupy', 'sites', 'infojobs', 'linkedin_easy'].includes(v.plataforma_envio) },
   // achada no LinkedIn, candidatura no site da empresa/Gupy (a Candidatura simplificada do LinkedIn fica de fora)
   { nome: 'LinkedIn', filtro: (v) => v.origem_plataforma === 'linkedin' && ['gupy', 'sites', 'infojobs'].includes(v.plataforma_envio) },
   { nome: 'Easy Apply', filtro: (v) => v.plataforma_envio === 'linkedin_easy' || (v.status === 'para_voce' && /^Candidatura simplificada/.test(v.motivo_status || '')) },
@@ -46,7 +49,7 @@ async function main() {
   const log = async (nivel, origem, msg) => { if (origem === 'agente') console.log(`      ${msg}`); };
   // "enviar": uma candidatura de verdade, com confirmação (o PowerShell engole o "--", por isso é uma palavra)
   const enviar = process.argv.slice(2).includes('enviar');
-  const quantidade = Number(process.argv.slice(2).find((a) => /^\d+$/.test(a) && Number(a) <= 50)) || (process.argv.slice(2).includes('lote') ? 10 : 1);
+  const quantidade = Number(process.argv.slice(2).find((a) => /^\d+$/.test(a) && Number(a) <= 50)) || (process.argv.slice(2).includes('todas') ? 50 : process.argv.slice(2).includes('lote') ? 10 : 1);
   const config = { ...lerConfiguracoes(await repo.config.obter()), modoTeste: !enviar };
   const listas = {};
   for (const nome of Object.keys(LISTAS)) listas[nome] = await repo.listas.listar(nome);
@@ -69,7 +72,7 @@ async function main() {
   if (ids.length) {
     for (const id of ids) { const v = await repo.vagas.obter(id); if (v) filas.push({ grupo: `#${id}`, vagas: [v], explicita: true }); }
   } else {
-    const nomes = args.filter((x) => /^[a-z]/i.test(x) && !['enviar', 'lote'].includes(x)).map((x) => x.toLowerCase());
+    const nomes = args.filter((x) => /^[a-z]/i.test(x) && !['enviar', 'lote', 'todas'].includes(x)).map((x) => x.toLowerCase());
     // InfoJobs: busca vagas novas na hora (já em São Paulo), para não testar só as antigas da fila
     if (!nomes.length || nomes.some((n) => 'infojobs'.startsWith(n))) {
       console.log('  Buscando vagas novas no InfoJobs (São Paulo)...');
@@ -113,7 +116,7 @@ async function main() {
     }
     const todas = [];
     for (const status of ['na_fila', 'testada', 'erro', 'pulada', 'aguardando', 'para_voce']) todas.push(...await repo.vagas.listar({ status, limite: 1000 }));
-    for (const g of GRUPOS.filter((x) => !nomes.length || nomes.some((n) => x.nome.toLowerCase().startsWith(n)))) {
+    for (const g of GRUPOS.filter((x) => (!nomes.length && !x.so) || nomes.some((n) => x.nome.toLowerCase().startsWith(n)))) {
       const vagas = todas
         // título claramente de outra área já fica de fora; o resto a IA confere pela descrição
         .filter((x) => g.filtro(x) && !NAO_SERVE.test(x.motivo_status || '') && (x.nota ?? 0) >= config.notaMinima && !/fora de TI/.test(areaPorRegras(x).motivo))
@@ -130,6 +133,8 @@ async function main() {
   console.log();
 
   if (enviar && quantidade > 1) {
+    const previa = filas.flatMap((x) => x.vagas.map((v) => `#${v.id} ${v.titulo} — ${v.empresa || ''}`)).slice(0, quantidade);
+    if (filas.some((x) => x.grupo === 'Testadas')) console.log(`  Vagas que chegaram ao fim no modo teste (a IA confere TI e cidade de novo antes de cada envio):\n${previa.map((p) => `    • ${p}`).join('\n')}\n`);
     const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
     const resp = await new Promise((ok) => rl.question(`  Vou ENVIAR DE VERDADE até ${quantidade} candidaturas em: ${filas.map((x) => x.grupo).join(', ')} (só vagas de TI em ${config.localizacao || 'São Paulo'}, conferidas pela descrição). Confirma? Digite "sim": `, ok));
     rl.close();
@@ -145,6 +150,14 @@ async function main() {
       const url = vaga.url_candidatura || vaga.url;
       console.log(`  [${grupo}] #${vaga.id} ${vaga.titulo} — ${vaga.empresa || ''}\n      ${url}`);
       const pastaPrints = path.join(pastaBase, `vaga-${vaga.id}`);
+      if (enviar) {
+        const repetida = await jaCandidatada(repo, vaga);
+        if (repetida) {
+          await repo.vagas.atualizar(vaga.id, { status: 'descartada', motivo_status: `Você já se candidatou a esta vaga (#${repetida.id})` });
+          console.log(`      => repetida: você já se candidatou a ela (#${repetida.id}). Indo para a próxima...\n`);
+          continue;
+        }
+      }
       const nav = await abrirNavegador();
       let r; let vazios = []; let descartada = null;
       try {

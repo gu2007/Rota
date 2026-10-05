@@ -144,7 +144,7 @@ async function main() {
 
   async function candidatar(vaga, ctx) {
     const plataforma = vaga._plataforma;
-    console.log(`\n  ${hora()} >> Candidatura ${ctx.config.modoTeste ? '(teste)' : 'DE VERDADE'}: ${vaga.titulo} — ${vaga.empresa || ''} [nota ${vaga.nota}]`);
+    console.log(`\n  ${hora()} >> Candidatura ${ctx.config.modoTeste ? "(teste)" : "DE VERDADE"}: #${vaga.id} ${vaga.titulo} — ${vaga.empresa || ''} [nota ${vaga.nota}]`);
     console.log(`     ${vaga.url_candidatura || vaga.url}`);
     const repetida = await jaCandidatada(repo, vaga);
     if (repetida) {

@@ -68,7 +68,7 @@ async function coletar(ctx, { fetchFn = fetch, agora = new Date() } = {}) {
     // 1) na sua cidade; 2) remotas de qualquer lugar
     const jobs = [...await buscar(termo, fetchFn, naCidade), ...(await buscar(termo, fetchFn, tipo).catch(() => [])).filter((j) => j.workplaceType === 'remote')];
     for (const job of jobs) {
-      if (!job.jobUrl || !job.name || vistos.has(job.id)) continue;
+      if (!job.jobUrl || !job.name || vistos.has(job.id) || /inactive|&/.test(String(job.jobUrl).split('/')[2] || '')) continue;
       if (job.applicationDeadline && new Date(`${String(job.applicationDeadline).slice(0, 10)}T23:59:59`) < agora) continue;
       vistos.set(job.id, converter(job));
     }

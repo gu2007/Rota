@@ -302,6 +302,9 @@ async function agirBase({ pagina, contexto, ctx, vaga, preencherFn, log = async 
       historico.push('- você disse que está logado, mas a página ainda não mostra a conta');
     }
     if (status === 'ja_candidatado') return { resultado: 'ja_candidatado', motivo: 'Você já se candidatou a esta vaga (visto pelo agente de IA)', respostas, passos: passo };
+    if (status === 'ajuda' && /encerrad|n[aã]o est[aá] mais dispon|expirad|n[aã]o aceita mais|vaga fechada/i.test(String(plano.motivo || ''))) {
+      return { resultado: 'encerrada', motivo: `Vaga encerrada: ${String(plano.motivo).slice(0, 200)}`, respostas, passos: passo };
+    }
     if (status === 'ajuda') return { resultado: 'pulada', motivo: `o agente de IA precisa de você: ${String(plano.motivo || '').slice(0, 250)}`, respostas, passos: passo };
     if (status === 'pronto_para_enviar' && modoTeste) {
       const vazios = await obrigatoriosVazios(pagina);
