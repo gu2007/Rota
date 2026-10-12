@@ -66,7 +66,8 @@ async function abrirNavegador({ headless = process.env.NAVEGADOR_OCULTO === 'tru
   const canal = process.env.NAVEGADOR_CANAL || (process.platform === 'linux' ? 'chromium' : 'chrome');
   if (process.env.NAVEGADOR_EXECUTAVEL) opcoes.executablePath = process.env.NAVEGADOR_EXECUTAVEL;
   else opcoes.channel = canal; // 'chromium' = modo oculto com o navegador completo (mais parecido com o real)
-  if (headless) opcoes.args.push('--no-sandbox');
+  // sem tela não existe "maximizado": fixa um tamanho de notebook para as páginas e os prints da IA
+  if (headless) { opcoes.args.push('--no-sandbox'); opcoes.viewport = { width: 1366, height: 900 }; }
 
   let contexto;
   try {

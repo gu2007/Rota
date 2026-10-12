@@ -77,7 +77,8 @@ async function main() {
   console.log(`  Prints: ${pasta}`);
   console.log('\n  Confira na janela do Chrome. Se faltar algo (código por e-mail, CAPTCHA), faça você mesmo nela.');
   console.log('  Quando terminar, FECHE a janela do Chrome.\n');
-  await new Promise((ok) => { nav.contexto.on('close', ok); setTimeout(ok, 15 * 60 * 1000); });
+  // no servidor (sem tela) não há janela para fechar: termina na hora
+  if (process.env.NAVEGADOR_OCULTO !== 'true') await new Promise((ok) => { nav.contexto.on('close', ok); setTimeout(ok, 15 * 60 * 1000); });
   await nav.fechar().catch(() => {});
 }
 

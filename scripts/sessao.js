@@ -10,7 +10,7 @@ const cofre = require('../src/util/cofre');
 const { abrirNavegador } = require('../src/navegador/navegador');
 
 const ARQUIVO = path.join(__dirname, '..', 'dados', 'sessao-completa.cofre');
-const DOMINIOS = /gupy\.io|gupy\.com\.br|linkedin\.com|google\.com|smartrecruiters\.com|factorialhr/;
+const DOMINIOS = /gupy\.io|gupy\.com\.br|linkedin\.com|google\.com|smartrecruiters\.com|factorialhr|catho\.com\.br|infojobs\.com\.br|indeed\.com/;
 
 async function exportar() {
   const nav = await abrirNavegador({ headless: true });
