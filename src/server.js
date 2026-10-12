@@ -5,6 +5,7 @@ const path = require('path');
 const express = require('express');
 const { ambiente } = require('./config');
 const { criarApi } = require('./rotas/api');
+const { protegerPainel } = require('./painel/acesso');
 const { criarExecutor } = require('./agendador/executor');
 
 async function main() {
@@ -12,12 +13,15 @@ async function main() {
   await repo.iniciar(ambiente.banco);
 
   const app = express();
+  protegerPainel(app); // senha antes de qualquer página ou chamada da API
   app.use('/api', criarApi(repo, { demo: ambiente.demo }));
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
   // no demo nada acessa a internet: os módulos das plataformas ficam desligados
   const executor = criarExecutor(repo, ambiente.demo ? { modulos: {} } : {});
-  executor.iniciar();
+  // PAINEL_SO=true: só o painel (no servidor quem trabalha é o npm run rodar, num processo separado)
+  if (process.env.PAINEL_SO !== 'true') executor.iniciar();
+  else console.log('  Executor desligado (PAINEL_SO=true): o trabalho fica com o npm run rodar.');
 
   // só escuta em localhost para não expor o painel na rede
   const servidor = app.listen(ambiente.porta, '127.0.0.1', () => {
@@ -26,7 +30,7 @@ async function main() {
   });
 
   const desligar = async () => {
-    executor.parar();
+    if (process.env.PAINEL_SO !== 'true') executor.parar();
     servidor.close();
     await repo.encerrar();
     process.exit(0);

@@ -13,6 +13,7 @@ async function api(metodo, caminho, corpo) {
     headers: corpo ? { 'Content-Type': 'application/json' } : {},
     body: corpo ? JSON.stringify(corpo) : undefined,
   });
+  if (resp.status === 401) { location.href = '/entrar'; throw new Error('Entre de novo no painel.'); }
   if (resp.status === 204) return null;
   const dados = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(dados.erro || `Erro ${resp.status}`);

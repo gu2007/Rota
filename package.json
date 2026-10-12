@@ -39,7 +39,8 @@
     "piloto": "node scripts/piloto.js",
     "testar:agente": "node scripts/testar-agente.js",
     "entrar": "node scripts/entrar.js",
-    "candidatar": "node scripts/testar-agente.js enviar lote"
+    "candidatar": "node scripts/testar-agente.js enviar lote",
+    "painel:senha": "node scripts/painel-senha.js"
   },
   "engines": {
     "node": ">=18"
